@@ -14,11 +14,14 @@ async def test():
     
     model = "gemini-2.5-flash-native-audio-latest"
     
+    _TOOLS = [{"function_declarations": [{"name": "test_tool", "description": "test"}]}]
+    
     config = types.LiveConnectConfig(
         response_modalities=["AUDIO"],
         system_instruction=types.Content(
             parts=[types.Part(text="You are a helpful restaurant assistant. Keep replies short.")]
         ),
+        tools=_TOOLS,
         speech_config=types.SpeechConfig(
             voice_config=types.VoiceConfig(
                 prebuilt_voice_config=types.PrebuiltVoiceConfig(
