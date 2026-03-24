@@ -50,8 +50,8 @@ def send_order_to_cook(
         url = f"https://api.twilio.com/2010-04-01/Accounts/{settings.TWILIO_ACCOUNT_SID}/Messages.json"
         
         data = {
-            "From": settings.TWILIO_WHATSAPP_FROM,
-            "To": settings.COOK_WHATSAPP_NUMBER,
+            "From": settings.TWILIO_WHATSAPP_FROM.replace(" ", ""),
+            "To": settings.COOK_WHATSAPP_NUMBER.replace(" ", ""),
             "Body": message_body,
         }
 

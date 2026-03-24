@@ -1,3 +1,12 @@
+FROM node:20-slim AS frontend-build
+
+WORKDIR /frontend
+COPY frontend/package*.json ./
+RUN npm ci
+COPY frontend/ .
+RUN npm run build
+
+# ── Python Backend ────────────────────────────────────────────────────────────
 FROM python:3.11-slim
 
 WORKDIR /app
@@ -8,12 +17,15 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libpq-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# Install dependencies first (better layer caching)
+# Install Python dependencies first (better layer caching)
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy application source
 COPY . .
+
+# Copy built frontend from build stage
+COPY --from=frontend-build /frontend/dist /app/frontend/dist
 
 # Create logs directory
 RUN mkdir -p logs

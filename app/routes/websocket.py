@@ -236,6 +236,7 @@ async def handle_media_stream(websocket: WebSocket):
     call_sid = None
     session = None
     order_confirmed = False
+    shutdown_event = asyncio.Event()  # Signal both loops to stop
 
     headers = {
         "Authorization": f"Bearer {settings.OPENAI_API_KEY}",
@@ -291,6 +292,8 @@ async def handle_media_stream(websocket: WebSocket):
                 nonlocal stream_sid, call_sid, session
                 try:
                     async for message in websocket.iter_text():
+                        if shutdown_event.is_set():
+                            break
                         data = json.loads(message)
                         event = data.get("event")
 
@@ -372,7 +375,13 @@ async def handle_media_stream(websocket: WebSocket):
                             if order_confirmed:
                                 logger.info("Order confirmed + goodbye spoken — hanging up in 2s")
                                 await asyncio.sleep(2)
-                                return  # Exit the loop → triggers connection close
+                                shutdown_event.set()
+                                # Close Twilio WebSocket to end the call
+                                try:
+                                    await websocket.close()
+                                except Exception:
+                                    pass
+                                return  # Exit the loop
 
                         # ── Function call started ─────────────────────
                         elif event_type == "response.output_item.added":

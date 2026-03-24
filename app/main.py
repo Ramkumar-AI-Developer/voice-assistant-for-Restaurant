@@ -132,3 +132,26 @@ app.include_router(dashboard_api.router, prefix="/api/dashboard", tags=["dashboa
 async def global_exception_handler(request, exc):
     logger.error(f"Unhandled exception: {exc}", exc_info=True)
     return JSONResponse(status_code=500, content={"error": "Internal server error"})
+
+
+# ── Serve frontend SPA (must be last) ────────────────────────────────────────
+from pathlib import Path
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
+
+_frontend_dist = Path(__file__).resolve().parent.parent / "frontend" / "dist"
+
+if _frontend_dist.is_dir():
+    # Serve index.html for SPA routes
+    @app.get("/{full_path:path}")
+    async def serve_spa(full_path: str):
+        file_path = _frontend_dist / full_path
+        if file_path.is_file():
+            return FileResponse(file_path)
+        return FileResponse(_frontend_dist / "index.html")
+
+    app.mount("/", StaticFiles(directory=str(_frontend_dist), html=True), name="frontend")
+    logger.info(f"Serving frontend from {_frontend_dist}")
+else:
+    logger.warning(f"Frontend dist not found at {_frontend_dist} — dashboard won't be served")
+
