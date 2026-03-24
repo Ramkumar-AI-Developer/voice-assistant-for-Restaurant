@@ -12,6 +12,7 @@ from app.models.menu import find_menu_item, OrderItem
 from app.models.session import CallSession, CallStage
 from app.models.db_models import Order, OrderItemDB, CallLog, CallMessage
 from app.services.whatsapp_service import send_order_to_cook
+from app.services.sms_service import send_order_sms_async
 
 logger = logging.getLogger(__name__)
 
@@ -123,6 +124,22 @@ async def save_order_to_db(session: CallSession, db: AsyncSession) -> int:
         )
     except Exception as exc:
         logger.error(f"WhatsApp send failed (non-blocking): {exc}")
+
+    # Send SMS receipt to caller
+    try:
+        total = sum((oi.menu_item.price * oi.quantity) for oi in session.order_items)
+        import asyncio
+        asyncio.create_task(
+            send_order_sms_async(
+                phone_number=session.phone_number,
+                order_id=order.id,
+                items=session.order_items,
+                total=total,
+                order_type=session.order_type
+            )
+        )
+    except Exception as exc:
+        logger.error(f"Failed to queue SMS receipt: {exc}")
 
     return order.id
 

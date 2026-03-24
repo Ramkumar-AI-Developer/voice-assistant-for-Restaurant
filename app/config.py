@@ -14,10 +14,13 @@ class Settings(BaseSettings):
     TWILIO_API_KEY: str
     TWILIO_PHONE_NUMBER: str
 
-    # ── Groq ──────────────────────────────────────────────────────────────────
+    # ── Groq (STT only) ──────────────────────────────────────────────────────
     GROQ_API_KEY: str
     GROQ_STT_MODEL: str = "whisper-large-v3"
-    GROQ_LLM_MODEL: str = "llama3-8b-8192"
+
+    # ── Gemini (LLM) ─────────────────────────────────────────────────────────
+    GEMINI_API_KEY: str
+    GEMINI_MODEL: str = "gemini-2.5-flash"
 
     # ── App ───────────────────────────────────────────────────────────────────
     BASE_URL: str                          # Public HTTPS URL for Twilio callbacks

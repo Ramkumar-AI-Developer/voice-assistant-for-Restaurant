@@ -6,8 +6,11 @@ import logging
 
 from fastapi import APIRouter
 from sqlalchemy import text
+from google import genai
+from google.genai import errors
 
 from app.database import AsyncSessionLocal
+from app.config import settings
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -25,8 +28,19 @@ async def health_check():
         db_status = f"error: {str(exc)[:100]}"
         logger.error(f"Health check DB error: {exc}")
 
+    gemini_status = "unknown"
+    try:
+        client = genai.Client(api_key=settings.GEMINI_API_KEY)
+        # Lightweight check: get model details
+        await client.aio.models.get(model=settings.GEMINI_MODEL)
+        gemini_status = "connected"
+    except Exception as exc:
+        gemini_status = f"error: {str(exc)[:100]}"
+        logger.error(f"Health check Gemini error: {exc}")
+
     return {
         "status": "ok",
         "database": db_status,
-        "version": "2.0.0",
+        "gemini": gemini_status,
+        "version": "2.1.0",
     }

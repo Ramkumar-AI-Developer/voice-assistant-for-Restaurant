@@ -14,29 +14,46 @@ import logging
 import os
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+import uuid
+from contextvars import ContextVar
+
+from fastapi import FastAPI, Depends, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from app.routes import call, webhook, health
+from app.routes import call, webhook, health, websocket
 from app.routes import auth, menu_api, orders_api, calls_api, dashboard_api
 from app.services import stt_service, llm_service
 from app.services.session_store import SessionStore
+from app.services.twilio_validator import validate_twilio_request
 from app.config import settings
 from app.database import create_tables, close_db, AsyncSessionLocal
 from app.models.menu import load_menu_from_db
 from app.services.auth_service import create_default_admin
 
+# ── Structured Logging Context ───────────────────────────────────────────────
+request_id_ctx_var: ContextVar[str] = ContextVar("request_id", default="-")
+
+class RequestIdFilter(logging.Filter):
+    def filter(self, record):
+        record.request_id = request_id_ctx_var.get()
+        return True
+
 # ── Logging ───────────────────────────────────────────────────────────────────
 os.makedirs("logs", exist_ok=True)
 logging.basicConfig(
     level=getattr(logging, settings.LOG_LEVEL.upper(), logging.INFO),
-    format="%(asctime)s | %(levelname)-8s | %(name)s | %(message)s",
+    format="%(asctime)s | [%(request_id)s] | %(levelname)-8s | %(name)s | %(message)s",
     handlers=[
         logging.StreamHandler(),
         logging.FileHandler("logs/app.log"),
     ],
 )
+
+# Apply context filter to the root logger to catch all log messages
+for handler in logging.getLogger().handlers:
+    handler.addFilter(RequestIdFilter())
+
 logger = logging.getLogger(__name__)
 
 
@@ -86,15 +103,22 @@ app.add_middleware(
 
 @app.middleware("http")
 async def log_requests(request, call_next):
+    req_id = request.headers.get("X-Request-ID") or str(uuid.uuid4())
+    token = request_id_ctx_var.set(req_id)
+    
     logger.info(f"Incoming request: {request.method} {request.url.path}")
     response = await call_next(request)
     logger.info(f"Response status: {response.status_code}")
+    
+    response.headers["X-Request-ID"] = req_id
+    request_id_ctx_var.reset(token)
     return response
 
 # ── Voice call routes ─────────────────────────────────────────────────────────
 app.include_router(health.router,  prefix="/health",  tags=["health"])
-app.include_router(call.router,    prefix="/call",    tags=["call"])
-app.include_router(webhook.router, prefix="/webhook", tags=["webhook"])
+app.include_router(call.router,    prefix="/call",    tags=["call"],    dependencies=[Depends(validate_twilio_request)])
+app.include_router(webhook.router, prefix="/webhook", tags=["webhook"], dependencies=[Depends(validate_twilio_request)])
+app.include_router(websocket.router, tags=["websocket"])
 
 # ── Dashboard API routes ─────────────────────────────────────────────────────
 app.include_router(auth.router,          prefix="/auth",          tags=["auth"])

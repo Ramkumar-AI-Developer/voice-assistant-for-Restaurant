@@ -11,17 +11,20 @@ import logging
 from fastapi import APIRouter, Form, Request, Depends
 from fastapi.responses import Response
 from sqlalchemy.ext.asyncio import AsyncSession
+from cachetools import TTLCache
 
 from app.database import get_db
 from app.services.session_store import SessionStore
-from app.services.llm_service import generate_greeting, build_system_prompt
-from app.services.twiml_service import greeting_twiml, error_twiml
-from app.models.menu import get_menu_text
+from app.services.twiml_service import error_twiml
 from app.models.db_models import CallLog
+from app.config import settings
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
+# Global in-memory rate limiter: maximum 10 calls per hour per phone number
+CALL_LIMIT = 10
+call_rate_tracker = TTLCache(maxsize=10000, ttl=3600)
 
 @router.post("/inbound")
 async def inbound_call(
@@ -32,6 +35,15 @@ async def inbound_call(
     db: AsyncSession = Depends(get_db),
 ):
     logger.info(f"Inbound call  SID={CallSid}  from={From}  to={To}")
+
+    # Check caller rate limit
+    current_calls = call_rate_tracker.get(From, 0)
+    if current_calls >= CALL_LIMIT:
+        logger.warning(f"Rate limit exceeded for caller {From}")
+        twiml = error_twiml("You have reached the maximum number of calls allowed. Please try again later.")
+        return Response(content=twiml, media_type="application/xml")
+    
+    call_rate_tracker[From] = current_calls + 1
 
     try:
         # Create session
@@ -55,16 +67,15 @@ async def inbound_call(
             await db.rollback()
             logger.error(f"Failed to create call log: {exc}")
 
-        # Store system prompt as first "message" so it's always at index 0
-        menu_text     = get_menu_text()
-        system_prompt = build_system_prompt(menu_text)
-        session.add_message("system", system_prompt)
-
-        # LLM-generated greeting (streamed, ~300-600 ms)
-        greeting_text = await generate_greeting(menu_text)
-        session.add_message("assistant", greeting_text)
-
-        twiml = greeting_twiml(greeting_text)
+        # Forward the call directly to our FastAPI WebSocket
+        ws_url = settings.BASE_URL.replace("https://", "wss://").replace("http://", "ws://") + "/media-stream"
+        
+        twiml = f"""<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+    <Connect>
+        <Stream url="{ws_url}" />
+    </Connect>
+</Response>"""
         return Response(content=twiml, media_type="application/xml")
 
     except Exception as exc:

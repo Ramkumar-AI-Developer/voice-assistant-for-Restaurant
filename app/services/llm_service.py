@@ -1,8 +1,8 @@
 """
-LLM orchestration via Groq SDK (llama-3.3-70b-versatile).
+LLM orchestration via Google Gemini API (gemini-2.5-flash).
 
-Uses the official groq Python SDK — AsyncGroq for all async paths,
-with streaming enabled for lower time-to-first-token.
+Uses the official google-genai Python SDK with streaming for
+lower time-to-first-token.
 
 Two public functions:
   • process_utterance() — extract order actions + generate spoken reply (JSON mode)
@@ -14,19 +14,20 @@ import logging
 import time
 from typing import Optional
 
-from groq import AsyncGroq
+from google import genai
+from google.genai import types
 
 from app.config import settings
 
 logger = logging.getLogger(__name__)
 
-_client: Optional[AsyncGroq] = None
+_client: Optional[genai.Client] = None
 
 
-def _get_client() -> AsyncGroq:
+def _get_client() -> genai.Client:
     global _client
     if _client is None:
-        _client = AsyncGroq(api_key=settings.GROQ_API_KEY)
+        _client = genai.Client(api_key=settings.GEMINI_API_KEY)
     return _client
 
 
@@ -75,9 +76,13 @@ When they say pickup or delivery, include a set_type action.
 
 # ── Streaming helper ──────────────────────────────────────────────────────────
 
-async def _stream_chat(messages: list[dict], max_tokens: int = 300) -> tuple[str, float]:
+async def _stream_chat(
+    system_prompt: str,
+    messages: list[dict],
+    max_tokens: int = 300,
+) -> tuple[str, float]:
     """
-    Stream a chat completion from Groq and accumulate the full response.
+    Stream a chat completion from Gemini and accumulate the full response.
     Streaming gives lower time-to-first-token even though we buffer the result
     before sending to TTS (Twilio requires complete TwiML up front).
 
@@ -85,26 +90,53 @@ async def _stream_chat(messages: list[dict], max_tokens: int = 300) -> tuple[str
     """
     client = _get_client()
     t0 = time.perf_counter()
-    chunks: list[str] = []
 
-    stream = await client.chat.completions.create(
-        model=settings.GROQ_LLM_MODEL,          # llama-3.3-70b-versatile
-        messages=messages,
-        temperature=0.3,                         # low temperature = fast + deterministic
-        max_completion_tokens=max_tokens,
-        top_p=1,
-        stream=True,
-        stop=None,
+    # Convert messages from OpenAI/Groq format to Gemini format
+    contents = []
+    for msg in messages:
+        role = msg["role"]
+        if role == "system":
+            continue  # system prompt handled via config
+        gemini_role = "user" if role == "user" else "model"
+        contents.append(
+            types.Content(
+                role=gemini_role,
+                parts=[types.Part.from_text(text=msg["content"])],
+            )
+        )
+
+    config = types.GenerateContentConfig(
+        system_instruction=system_prompt,
+        temperature=0.3,
+        max_output_tokens=max_tokens,
+        top_p=1.0,
+        response_mime_type="application/json",
+        # Disable "thinking" mode for speed — voice bot needs fast JSON, not deep reasoning
+        thinking_config=types.ThinkingConfig(thinking_budget=0),
     )
 
-    async for chunk in stream:
-        delta = chunk.choices[0].delta.content
-        if delta:
-            chunks.append(delta)
+    # Use synchronous streaming run in thread pool to avoid blocking the event loop
+    import asyncio
+
+    def _sync_stream():
+        parts = []
+        for chunk in client.models.generate_content_stream(
+            model=settings.GEMINI_MODEL,
+            contents=contents,
+            config=config,
+        ):
+            try:
+                if chunk.text:
+                    parts.append(chunk.text)
+            except Exception:
+                pass  # skip chunks without text (e.g. thinking chunks)
+        return "".join(parts)
+
+    full_text = await asyncio.get_event_loop().run_in_executor(None, _sync_stream)
+    full_text = full_text.strip()
 
     latency = time.perf_counter() - t0
-    full_text = "".join(chunks).strip()
-    logger.info(f"LLM [{latency:.2f}s] '{full_text[:100]}'")
+    logger.info(f"Gemini [{latency:.2f}s] '{full_text[:100]}'")
     return full_text, latency
 
 
@@ -122,9 +154,19 @@ async def process_utterance(
         "latency": float
     }
     """
-    messages = session_messages + [{"role": "user", "content": transcript}]
+    # Extract system prompt from session messages
+    system_prompt = ""
+    filtered_messages = []
+    for msg in session_messages:
+        if msg["role"] == "system":
+            system_prompt = msg["content"]
+        else:
+            filtered_messages.append(msg)
 
-    raw, latency = await _stream_chat(messages, max_tokens=300)
+    # Add the new user message
+    filtered_messages.append({"role": "user", "content": transcript})
+
+    raw, latency = await _stream_chat(system_prompt, filtered_messages, max_tokens=300)
 
     # Strip accidental markdown fences
     clean = raw.strip()
@@ -137,7 +179,7 @@ async def process_utterance(
     try:
         parsed = json.loads(clean)
     except json.JSONDecodeError:
-        logger.warning(f"LLM returned non-JSON, wrapping as plain reply: {raw[:120]}")
+        logger.warning(f"Gemini returned non-JSON, wrapping as plain reply: {raw[:120]}")
         parsed = {
             "actions": [{"type": "none"}],
             "reply": raw[:200],
@@ -149,12 +191,11 @@ async def process_utterance(
 
 async def generate_greeting(menu_text: str) -> str:
     """Generate a warm, personalised greeting at the start of the call."""
-    system = build_system_prompt(menu_text)
+    system_prompt = build_system_prompt(menu_text)
     messages = [
-        {"role": "system", "content": system},
-        {"role": "user",   "content": "SYSTEM_EVENT: Call just connected. Greet the caller warmly and ask what they would like to order."},
+        {"role": "user", "content": "SYSTEM_EVENT: Call just connected. Greet the caller warmly and ask what they would like to order."},
     ]
-    raw, _ = await _stream_chat(messages, max_tokens=80)
+    raw, _ = await _stream_chat(system_prompt, messages, max_tokens=80)
 
     # Try to parse JSON reply field; fall back to raw text
     try:
@@ -167,5 +208,4 @@ async def generate_greeting(menu_text: str) -> str:
 async def close() -> None:
     global _client
     if _client is not None:
-        await _client.close()
         _client = None
