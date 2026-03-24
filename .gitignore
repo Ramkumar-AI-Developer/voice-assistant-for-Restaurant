@@ -1,0 +1,31 @@
+# Environments
+.env
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+venv/
+env/
+.venv/
+.env.staging
+
+# Logs and databases
+logs/
+*.log
+*.sqlite3
+
+# Temporary / scripts
+get_whatsapp_error.py
+get_order_log.py
+whatsapp_error.txt
+extract_call_log.py
+last_call_trace.txt
+last_call_trace_utf8.txt
+
+# Frontend (Node)
+frontend/node_modules/
+frontend/dist/
+frontend/.DS_Store
+*.swp
