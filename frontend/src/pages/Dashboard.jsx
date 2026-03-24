@@ -1,13 +1,20 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { HiOutlineShoppingCart, HiOutlineCurrencyDollar, HiOutlinePhone, HiOutlineClock } from 'react-icons/hi';
 import { dashboardAPI } from '../services/api';
 
 export default function Dashboard() {
   const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [wsConnected, setWsConnected] = useState(false);
+  const [recentEvents, setRecentEvents] = useState([]);
+  const wsRef = useRef(null);
 
   useEffect(() => {
     loadStats();
+    connectWebSocket();
+    return () => {
+      if (wsRef.current) wsRef.current.close();
+    };
   }, []);
 
   const loadStats = async () => {
@@ -21,6 +28,57 @@ export default function Dashboard() {
     }
   };
 
+  const connectWebSocket = () => {
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const apiBase = import.meta.env.VITE_API_URL || window.location.origin;
+    const wsHost = apiBase.replace(/^https?:\/\//, '');
+    const wsUrl = `${protocol}//${wsHost}/ws/dashboard`;
+
+    try {
+      const ws = new WebSocket(wsUrl);
+      wsRef.current = ws;
+
+      ws.onopen = () => {
+        setWsConnected(true);
+        console.log('Dashboard WebSocket connected');
+      };
+
+      ws.onmessage = (event) => {
+        const msg = JSON.parse(event.data);
+        if (msg.type === 'heartbeat' || msg.type === 'pong') return;
+
+        // Add event to recent events feed
+        setRecentEvents(prev => [{
+          type: msg.type,
+          data: msg.data,
+          time: new Date().toLocaleTimeString(),
+        }, ...prev].slice(0, 10));
+
+        // Refresh stats on important events
+        if (['new_order', 'call_ended', 'order_update'].includes(msg.type)) {
+          loadStats();
+        }
+      };
+
+      ws.onclose = () => {
+        setWsConnected(false);
+        // Auto-reconnect after 3 seconds
+        setTimeout(connectWebSocket, 3000);
+      };
+
+      ws.onerror = () => setWsConnected(false);
+
+      // Ping every 25 seconds to keep alive
+      const pingInterval = setInterval(() => {
+        if (ws.readyState === WebSocket.OPEN) ws.send('ping');
+      }, 25000);
+
+      ws.addEventListener('close', () => clearInterval(pingInterval));
+    } catch (err) {
+      console.error('WebSocket connection failed:', err);
+    }
+  };
+
   if (loading) return <div className="loading"><div className="spinner" /></div>;
 
   const today = stats?.today || {};
@@ -28,9 +86,15 @@ export default function Dashboard() {
 
   return (
     <div>
-      <div className="page-header">
-        <h1>Dashboard</h1>
-        <p>Overview of your restaurant's AI voice assistant performance</p>
+      <div className="page-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+        <div>
+          <h1>Dashboard</h1>
+          <p>Overview of your restaurant's AI voice assistant performance</p>
+        </div>
+        <div className="live-indicator">
+          <div className="live-dot" />
+          {wsConnected ? 'Live' : 'Reconnecting...'}
+        </div>
       </div>
 
       {/* ── Today's Stats ─────────────────────────────────────────────────── */}
@@ -108,6 +172,33 @@ export default function Dashboard() {
           </div>
         </div>
       </div>
+
+      {/* ── Live Activity Feed ────────────────────────────────────────────── */}
+      {recentEvents.length > 0 && (
+        <div className="card" style={{ marginTop: 20 }}>
+          <div className="card-header">
+            <span className="card-title">Live Activity</span>
+            <div className="live-indicator"><div className="live-dot" />Real-time</div>
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {recentEvents.map((evt, i) => (
+              <div key={i} style={{
+                display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                padding: '8px 12px', background: 'var(--bg-primary)', borderRadius: 'var(--radius-sm)',
+                fontSize: 13, animation: i === 0 ? 'fadeIn 0.3s' : 'none',
+              }}>
+                <span>
+                  {evt.type === 'new_order' && `🛒 New order from ${evt.data?.customer_name || 'customer'} — $${evt.data?.total?.toFixed(2) || '0.00'}`}
+                  {evt.type === 'call_started' && `📞 Call started`}
+                  {evt.type === 'call_ended' && `📴 Call ended (${evt.data?.duration || 0}s)`}
+                  {evt.type === 'order_update' && `➕ ${evt.data?.item || 'Item'} added to order`}
+                </span>
+                <span style={{ color: 'var(--text-muted)', fontSize: 11 }}>{evt.time}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* ── Recent Orders ─────────────────────────────────────────────────── */}
       <div className="card" style={{ marginTop: 20 }}>

@@ -39,7 +39,7 @@ export default function App() {
   return (
     <>
       <Toaster position="top-right" toastOptions={{
-        style: { background: '#1e293b', color: '#e2e8f0', border: '1px solid #334155' },
+        style: { background: '#ffffff', color: '#0f172a', border: '1px solid #e2e8f0', boxShadow: '0 4px 20px rgba(0,0,0,0.08)' },
       }} />
       <div className="app-layout">
         {!isLogin && user && <Sidebar user={user} onLogout={handleLogout} />}
