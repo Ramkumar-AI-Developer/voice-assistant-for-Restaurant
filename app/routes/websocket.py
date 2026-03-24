@@ -126,7 +126,7 @@ async def media_stream(websocket: WebSocket):
                         call_sid = data["start"]["callSid"]
                         logger.info(f"Started Twilio Media Stream: {stream_sid} for call {call_sid}")
                         # Immediately send a greeting text to Gemini to kick off the audio!
-                        await gemini_session.send(input={"parts": [{"text": "Hello! Please greet the user."}]})
+                        await gemini_session.send(input="Hello! Please greet the user.", end_of_turn=True)
                     
                     elif event == "media":
                         b64_audio = data["media"]["payload"]
@@ -201,9 +201,9 @@ async def media_stream(websocket: WebSocket):
                                 
                                 # Send tool execution result back to Gemini so it understands what happened
                                 await gemini_session.send(
-                                    input=types.Content(
-                                        parts=[
-                                            types.Part.from_function_response(
+                                    input=types.LiveClientToolResponse(
+                                        function_responses=[
+                                            types.FunctionResponse(
                                                 name=name,
                                                 response=result
                                             )
