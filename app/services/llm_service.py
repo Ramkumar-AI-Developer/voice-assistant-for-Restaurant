@@ -12,6 +12,7 @@ Two public functions:
 import json
 import logging
 import time
+import asyncio
 from typing import Optional
 
 from google import genai
@@ -83,8 +84,7 @@ async def _stream_chat(
 ) -> tuple[str, float]:
     """
     Stream a chat completion from Gemini and accumulate the full response.
-    Streaming gives lower time-to-first-token even though we buffer the result
-    before sending to TTS (Twilio requires complete TwiML up front).
+    Includes retry with exponential backoff for 429 rate-limit errors.
 
     Returns (full_text, latency_seconds).
     """
@@ -115,29 +115,42 @@ async def _stream_chat(
         thinking_config=types.ThinkingConfig(thinking_budget=0),
     )
 
-    # Use synchronous streaming run in thread pool to avoid blocking the event loop
-    import asyncio
+    max_retries = 3
+    for attempt in range(max_retries):
+        try:
+            def _sync_stream():
+                parts = []
+                for chunk in client.models.generate_content_stream(
+                    model=settings.GEMINI_MODEL,
+                    contents=contents,
+                    config=config,
+                ):
+                    try:
+                        if chunk.text:
+                            parts.append(chunk.text)
+                    except Exception:
+                        pass  # skip chunks without text (e.g. thinking chunks)
+                return "".join(parts)
 
-    def _sync_stream():
-        parts = []
-        for chunk in client.models.generate_content_stream(
-            model=settings.GEMINI_MODEL,
-            contents=contents,
-            config=config,
-        ):
-            try:
-                if chunk.text:
-                    parts.append(chunk.text)
-            except Exception:
-                pass  # skip chunks without text (e.g. thinking chunks)
-        return "".join(parts)
+            full_text = await asyncio.get_event_loop().run_in_executor(None, _sync_stream)
+            full_text = full_text.strip()
 
-    full_text = await asyncio.get_event_loop().run_in_executor(None, _sync_stream)
-    full_text = full_text.strip()
+            latency = time.perf_counter() - t0
+            logger.info(f"Gemini [{latency:.2f}s] '{full_text[:100]}'")
+            return full_text, latency
 
-    latency = time.perf_counter() - t0
-    logger.info(f"Gemini [{latency:.2f}s] '{full_text[:100]}'")
-    return full_text, latency
+        except Exception as e:
+            error_str = str(e)
+            if "429" in error_str or "RESOURCE_EXHAUSTED" in error_str:
+                wait_time = (2 ** attempt) + 1  # 2s, 3s, 5s
+                logger.warning(f"Gemini 429 rate limit hit (attempt {attempt+1}/{max_retries}). Retrying in {wait_time}s...")
+                await asyncio.sleep(wait_time)
+                continue
+            else:
+                raise
+
+    # All retries exhausted
+    raise Exception("Gemini API rate limit exceeded after all retries")
 
 
 # ── Public API ────────────────────────────────────────────────────────────────

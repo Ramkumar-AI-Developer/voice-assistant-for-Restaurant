@@ -20,7 +20,7 @@ class Settings(BaseSettings):
 
     # ── Gemini (LLM) ─────────────────────────────────────────────────────────
     GEMINI_API_KEY: str
-    GEMINI_MODEL: str = "gemini-2.5-flash"
+    GEMINI_MODEL: str = "gemini-2.0-flash"
 
     # ── App ───────────────────────────────────────────────────────────────────
     BASE_URL: str                          # Public HTTPS URL for Twilio callbacks
