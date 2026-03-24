@@ -98,7 +98,7 @@ async def media_stream(websocket: WebSocket):
     call_sid = None
     client = get_genai_client()
 
-    MODEL = settings.GEMINI_MODEL
+    MODEL = "gemini-2.5-flash-native-audio-latest"
 
     # Get the latest menu text and inject it into the prompt
     menu_text = get_menu_text()
