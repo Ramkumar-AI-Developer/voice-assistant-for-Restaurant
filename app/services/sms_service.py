@@ -17,6 +17,11 @@ def send_order_sms(phone_number: str, order_id: int, items: List[OrderItem], tot
         logger.warning(f"Twilio credentials missing. Skipping SMS for order {order_id}")
         return
 
+    # Validate phone number before attempting to send
+    if not phone_number or phone_number == "unknown" or len(phone_number) < 8:
+        logger.warning(f"Invalid phone number '{phone_number}'. Skipping SMS for order {order_id}")
+        return
+
     try:
         from_number = settings.TWILIO_PHONE_NUMBER
         

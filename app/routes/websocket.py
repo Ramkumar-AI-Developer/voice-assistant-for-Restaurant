@@ -235,6 +235,7 @@ async def handle_media_stream(websocket: WebSocket):
     stream_sid = None
     call_sid = None
     session = None
+    order_confirmed = False
 
     headers = {
         "Authorization": f"Bearer {settings.OPENAI_API_KEY}",
@@ -298,10 +299,13 @@ async def handle_media_stream(websocket: WebSocket):
                             call_sid = data["start"]["callSid"]
                             logger.info(f"Stream started: {stream_sid} call={call_sid}")
                             
-                            # Get or create session for order tracking
+                            # Get session created by call.py (has correct phone number)
                             session = await SessionStore.get(call_sid)
                             if not session:
-                                session = await SessionStore.get_or_create(call_sid, phone_number="unknown")
+                                # Fallback — extract phone from Twilio start event if available
+                                custom_params = data["start"].get("customParameters", {})
+                                phone = custom_params.get("callerPhone", "unknown")
+                                session = await SessionStore.create(call_sid, phone_number=phone)
                             
                             await broadcast_dashboard_event("call_started", {
                                 "call_sid": call_sid,
@@ -327,7 +331,7 @@ async def handle_media_stream(websocket: WebSocket):
 
             # ── OpenAI → Twilio ───────────────────────────────────────────
             async def openai_to_twilio():
-                nonlocal stream_sid, session
+                nonlocal stream_sid, session, order_confirmed
                 audio_chunks_sent = 0
                 
                 # Track pending function calls
@@ -363,6 +367,12 @@ async def handle_media_stream(websocket: WebSocket):
                         elif event_type == "response.audio.done":
                             logger.info(f"Audio done ({audio_chunks_sent} chunks)")
                             audio_chunks_sent = 0
+                            
+                            # Auto-hangup after order confirmation goodbye
+                            if order_confirmed:
+                                logger.info("Order confirmed + goodbye spoken — hanging up in 2s")
+                                await asyncio.sleep(2)
+                                return  # Exit the loop → triggers connection close
 
                         # ── Function call started ─────────────────────
                         elif event_type == "response.output_item.added":
@@ -394,6 +404,10 @@ async def handle_media_stream(websocket: WebSocket):
                                 logger.info(f"Executing tool: {fn_name}({fn_args})")
                                 result = await execute_tool(fn_name, fn_args, session)
                                 logger.info(f"Tool result: {result[:100]}")
+                                
+                                # Track if order was confirmed
+                                if fn_name == "confirm_order" and '"success": true' in result.lower():
+                                    order_confirmed = True
                                 
                                 # Send function output back to OpenAI
                                 await openai_ws.send(json.dumps({
