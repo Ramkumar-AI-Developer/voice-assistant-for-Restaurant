@@ -27,6 +27,7 @@ class Settings(BaseSettings):
     BASE_URL: str                          # Public HTTPS URL for Twilio callbacks
     SECRET_KEY: str = "change-me"
     LOG_LEVEL: str = "INFO"
+    OPENAI_API_KEY: str = ""               # OpenAI Realtime API key
 
     # ── Database ──────────────────────────────────────────────────────────────
     DATABASE_URL: str

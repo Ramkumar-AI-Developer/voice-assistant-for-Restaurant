@@ -2,14 +2,11 @@
 POST /call/inbound
 Twilio calls this URL when a new call arrives.
 
-Configure your Twilio phone number's Voice webhook to:
-    POST https://<your-domain>/call/inbound
-
 Flow:
-  1. Generate a greeting via Gemini text API
-  2. Speak it with Twilio TTS inside a <Gather>
-  3. <Gather> captures the caller's speech → POST /webhook/speech
-  4. The conversation loop continues in webhook.py
+  1. Return <Connect><Stream> TwiML to open a bidirectional audio stream
+  2. Twilio connects to /media-stream WebSocket
+  3. Our WebSocket handler bridges Twilio ←→ OpenAI Realtime API
+  4. OpenAI handles STT, LLM, and TTS natively in g711_ulaw format
 """
 
 import logging
@@ -21,10 +18,8 @@ from cachetools import TTLCache
 
 from app.database import get_db
 from app.services.session_store import SessionStore
-from app.services.llm_service import generate_greeting
-from app.services.twiml_service import greeting_twiml, error_twiml
+from app.services.twiml_service import error_twiml
 from app.models.db_models import CallLog
-from app.models.menu import get_menu_text
 from app.config import settings
 
 logger = logging.getLogger(__name__)
@@ -75,18 +70,17 @@ async def inbound_call(
             await db.rollback()
             logger.error(f"Failed to create call log: {exc}")
 
-        # Generate greeting via Gemini text API (with fallback)
-        menu_text = get_menu_text()
-        try:
-            greeting = await generate_greeting(menu_text)
-        except Exception as exc:
-            logger.warning(f"[{CallSid}] Greeting generation failed ({exc}), using fallback")
-            greeting = "Welcome to The Golden Fork! What can I get for you today?"
-        session.add_message("assistant", greeting)
-        logger.info(f"[{CallSid}] Greeting: '{greeting[:80]}'")
-
-        # Return TwiML: Say greeting inside <Gather>, then listen
-        twiml = greeting_twiml(greeting)
+        # Open bidirectional audio stream to our WebSocket handler
+        ws_url = settings.BASE_URL.replace("https://", "wss://").replace("http://", "ws://") + "/media-stream"
+        
+        twiml = f"""<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+    <Connect>
+        <Stream url="{ws_url}" />
+    </Connect>
+    <Pause length="40" />
+</Response>"""
+        logger.info(f"[{CallSid}] Streaming to {ws_url}")
         return Response(content=twiml, media_type="application/xml")
 
     except Exception as exc:

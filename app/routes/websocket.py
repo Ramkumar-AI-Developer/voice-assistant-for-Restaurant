@@ -1,374 +1,218 @@
 """
-FastAPI WebSocket endpoint for Twilio Media Streams.
-Connects directly to the Google Gemini Multimodal Live API.
+WebSocket handler: Twilio Media Stream ←→ OpenAI Realtime API bridge.
+
+Architecture:
+  Caller ↔ Twilio (g711_ulaw) ↔ /media-stream ↔ OpenAI Realtime API (g711_ulaw)
+
+Key benefits over Gemini Live API:
+  • OpenAI natively supports g711_ulaw — zero audio resampling
+  • Built-in server-side VAD that works with telephony audio
+  • Barge-in / interruption handling out of the box
+  • Sub-second latency
 """
 
-import asyncio
 import json
+import asyncio
 import logging
-import base64
-import audioop
+
+import websockets
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
-from google import genai
-from google.genai import types
 
 from app.config import settings
-from app.database import AsyncSessionLocal
-from app.models.menu import get_menu_text, find_menu_item, OrderItem
-from app.services.session_store import SessionStore
-from app.services.order_service import save_order_to_db
+from app.models.menu import get_menu_text
 
-logger = logging.getLogger(__name__)
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
-_genai_client = None
+# OpenAI Realtime API endpoint
+OPENAI_REALTIME_URL = "wss://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview-2024-12-17"
 
-# ── Audio constants ──────────────────────────────────────────────────────────
-TWILIO_RATE = 8000
-GEMINI_IN_RATE = 16000
-GEMINI_OUT_RATE = 24000
-SAMPLE_WIDTH = 2       # 16-bit PCM
-MULAW_CHUNK = 160      # 20ms of 8kHz mu-law (1 byte/sample)
-
-def get_genai_client():
-    global _genai_client
-    if _genai_client is None:
-        _genai_client = genai.Client(api_key=settings.GEMINI_API_KEY)
-    return _genai_client
-
-
-SYSTEM_INSTRUCTION = """
-You are Aria, a friendly and efficient voice assistant for "The Golden Fork" restaurant.
+# System instructions for the voice assistant
+SYSTEM_MESSAGE = """You are Aria, a friendly and efficient voice assistant for "The Golden Fork" restaurant.
 Your job is to help callers place food orders over the phone.
 
+RULES:
+- Keep every reply short and natural — this is a phone call, not a chat.
+- Be warm but quick. No long monologues.
+- Always confirm the item name and price when adding something to the order.
+- If you are unsure what the caller said, ask ONE short clarifying question.
+- When the caller is done ordering, ask for their NAME.
+- After getting the name, ask if it's for pickup or delivery.
+- Then read back the full order with the total and ask for confirmation.
+- Do NOT invent items not on the menu. Politely say the item is unavailable.
+- The caller's phone number is automatically captured — do NOT ask for it.
+
 MENU:
-{menu_text}
-
-STRICT RULES:
-- Keep every reply under 35 words. Be brief and warm.
-- Confirm the caller's items and total. Ask if they want pickup or delivery.
-- You are speaking on a live phone call, so be natural and conversational.
-- ALWAYS use the provided tools (add_order_item, remove_order_item, finalize_order) to manage orders.
+{menu}
 """
-
-_TOOLS = [
-    {
-        "function_declarations": [
-            {
-                "name": "add_order_item",
-                "description": "Add one or more units of a specific menu item to the order.",
-                "parameters": {
-                    "type": "OBJECT",
-                    "properties": {
-                        "item_name": {"type": "STRING", "description": "Name of menu item"},
-                        "quantity": {"type": "INTEGER", "description": "Quantity (e.g., 2)"},
-                        "notes": {"type": "STRING", "description": "Special instructions"}
-                    },
-                    "required": ["item_name", "quantity"]
-                }
-            },
-            {
-                "name": "remove_order_item",
-                "description": "Remove an item from the order.",
-                "parameters": {
-                    "type": "OBJECT",
-                    "properties": {
-                        "item_name": {"type": "STRING", "description": "Name of item to remove"}
-                    },
-                    "required": ["item_name"]
-                }
-            },
-            {
-                "name": "finalize_order",
-                "description": "Finalize and submit the order to the kitchen.",
-                "parameters": {
-                    "type": "OBJECT",
-                    "properties": {
-                        "customer_name": {"type": "STRING", "description": "Customer name"},
-                        "order_type": {"type": "STRING", "description": "'pickup' or 'delivery'"}
-                    },
-                    "required": ["customer_name", "order_type"]
-                }
-            }
-        ]
-    }
-]
-
-
-class AudioProcessor:
-    """Processes 20ms Twilio mu-law chunks incrementally."""
-    def __init__(self):
-        self._ratecv_state = None
-        
-    def process_chunk(self, b64_mulaw: str) -> bytes:
-        mulaw_bytes = base64.b64decode(b64_mulaw)
-        pcm8k = audioop.ulaw2lin(mulaw_bytes, SAMPLE_WIDTH)
-        pcm16k, self._ratecv_state = audioop.ratecv(
-            pcm8k, SAMPLE_WIDTH, 1,
-            TWILIO_RATE, GEMINI_IN_RATE,
-            self._ratecv_state
-        )
-        return pcm16k
-
-
-def gemini_audio_to_twilio(pcm24k_bytes: bytes) -> list[str]:
-    """
-    Convert 24kHz PCM16 from Gemini → 8kHz mu-law base64 payloads for Twilio.
-    Returns a list of base64-encoded 160-byte mu-law chunks.
-    """
-    # Resample 24kHz → 8kHz
-    pcm8k, _ = audioop.ratecv(pcm24k_bytes, SAMPLE_WIDTH, 1, GEMINI_OUT_RATE, TWILIO_RATE, None)
-    # PCM16 → mu-law
-    mulaw_bytes = audioop.lin2ulaw(pcm8k, SAMPLE_WIDTH)
-    
-    # Split into 160-byte chunks (20ms each)
-    chunks = []
-    for i in range(0, len(mulaw_bytes), MULAW_CHUNK):
-        chunk = mulaw_bytes[i:i + MULAW_CHUNK]
-        chunks.append(base64.b64encode(chunk).decode('ascii'))
-    return chunks
 
 
 @router.websocket("/media-stream")
-async def media_stream(websocket: WebSocket):
+async def handle_media_stream(websocket: WebSocket):
+    """Bridge Twilio's bidirectional audio stream with OpenAI's Realtime API."""
     await websocket.accept()
     logger.info("Twilio WebSocket connected on /media-stream")
-    
+
     stream_sid = None
     call_sid = None
-    client = get_genai_client()
 
-    MODEL = "gemini-2.5-flash-native-audio-latest"
-
-    menu_text = get_menu_text()
-    prompt = SYSTEM_INSTRUCTION.format(menu_text=menu_text)
-
-    config = types.LiveConnectConfig(
-        response_modalities=["AUDIO"],
-        system_instruction=types.Content(
-            parts=[types.Part(text=prompt)]
-        ),
-        tools=_TOOLS,
-        speech_config=types.SpeechConfig(
-            voice_config=types.VoiceConfig(
-                prebuilt_voice_config=types.PrebuiltVoiceConfig(
-                    voice_name="Aoede"
-                )
-            )
-        ),
-        input_audio_transcription=types.AudioTranscriptionConfig(),
-        output_audio_transcription=types.AudioTranscriptionConfig(),
-        realtime_input_config=types.RealtimeInputConfig(
-            automatic_activity_detection=types.AutomaticActivityDetection(
-                disabled=True
-            )
-        ),
-    )
+    # OpenAI Realtime API connection headers
+    headers = {
+        "Authorization": f"Bearer {settings.OPENAI_API_KEY}",
+        "OpenAI-Beta": "realtime=v1",
+    }
 
     try:
-        async with client.aio.live.connect(model=MODEL, config=config) as gemini_session:
-            logger.info("Connected to Gemini Live API")
+        async with websockets.connect(
+            OPENAI_REALTIME_URL,
+            additional_headers=headers,
+            close_timeout=10,
+        ) as openai_ws:
+            logger.info("Connected to OpenAI Realtime API")
 
-            processor = AudioProcessor()
+            # ── Configure session ─────────────────────────────────────────
+            menu_text = get_menu_text()
+            session_config = {
+                "type": "session.update",
+                "session": {
+                    "turn_detection": {
+                        "type": "server_vad",
+                        "threshold": 0.5,
+                        "prefix_padding_ms": 300,
+                        "silence_duration_ms": 500,
+                    },
+                    "input_audio_format": "g711_ulaw",
+                    "output_audio_format": "g711_ulaw",
+                    "voice": "shimmer",
+                    "instructions": SYSTEM_MESSAGE.format(menu=menu_text),
+                    "modalities": ["text", "audio"],
+                    "temperature": 0.8,
+                    "input_audio_transcription": {
+                        "model": "whisper-1",
+                    },
+                }
+            }
+            await openai_ws.send(json.dumps(session_config))
+            logger.info("Sent session config to OpenAI")
 
-            # ─── Twilio → Gemini ────────────────────────────────────────────
-            bot_is_speaking = True  # Starts true because we send a greeting
+            # ── Send initial greeting trigger ─────────────────────────────
+            greeting_event = {
+                "type": "response.create",
+                "response": {
+                    "modalities": ["text", "audio"],
+                    "instructions": "Greet the caller warmly and ask what they would like to order today. Keep it under 20 words.",
+                }
+            }
+            await openai_ws.send(json.dumps(greeting_event))
+            logger.info("Sent greeting trigger to OpenAI")
 
-            async def twilio_to_gemini_task():
-                nonlocal stream_sid, call_sid, bot_is_speaking
-                chunks_in = 0
-                
-                # Manual VAD State
-                vad_threshold = 800     # RMS threshold for "speaking"
-                vad_talk_streak = 0
-                vad_silence_streak = 0
-                user_is_speaking = False
-                activity_started = False  # Tracks if we sent activity_start to Gemini
-                
+            # ── Twilio → OpenAI (forward caller audio) ───────────────────
+            async def twilio_to_openai():
+                nonlocal stream_sid, call_sid
                 try:
-                    while True:
-                        try:
-                            message_str = await websocket.receive_text()
-                        except WebSocketDisconnect:
-                            logger.info("Twilio WS disconnected in receiver")
-                            break
-                        
-                        data = json.loads(message_str)
+                    async for message in websocket.iter_text():
+                        data = json.loads(message)
                         event = data.get("event")
-                        
+
                         if event == "start":
                             stream_sid = data["start"]["streamSid"]
                             call_sid = data["start"]["callSid"]
                             logger.info(f"Stream started: {stream_sid} call={call_sid}")
-                            await gemini_session.send(
-                                input="Hello! Greet the caller warmly.",
-                                end_of_turn=True
-                            )
-                            logger.info("Sent greeting prompt")
-                        
+
                         elif event == "media":
-                            pcm16k = processor.process_chunk(data["media"]["payload"])
-                            
-                            rms = audioop.rms(pcm16k, 2)
-                            if chunks_in % 200 == 0:
-                                logger.info(f"Audio In RMS: {rms} (bot_speaking={bot_is_speaking}, user_speaking={user_is_speaking}, activity={activity_started})")
-                            
-                            if not bot_is_speaking:
-                                try:
-                                    # Manual VAD: detect speech start/end
-                                    if rms >= vad_threshold:
-                                        vad_talk_streak += 1
-                                        vad_silence_streak = 0
-                                        
-                                        # Speech detected! Send activity_start if not already sent
-                                        if vad_talk_streak > 5 and not activity_started:
-                                            logger.info(f"Manual VAD: Speech START (RMS={rms})")
-                                            await gemini_session.send_realtime_input(
-                                                activity_start=types.ActivityStart()
-                                            )
-                                            activity_started = True
-                                            user_is_speaking = True
-                                    else:
-                                        vad_silence_streak += 1
-                                        
-                                        # If user was speaking and now silent for 1s (50 * 20ms)
-                                        if user_is_speaking and vad_silence_streak > 50:
-                                            logger.info(f"Manual VAD: Speech END (silence={vad_silence_streak} chunks)")
-                                            await gemini_session.send_realtime_input(
-                                                activity_end=types.ActivityEnd()
-                                            )
-                                            user_is_speaking = False
-                                            activity_started = False
-                                            vad_talk_streak = 0
-                                            vad_silence_streak = 0
-                                            bot_is_speaking = True  # Mute while waiting for response
-                                    
-                                    # Always send audio to Gemini (it needs audio context)
-                                    await gemini_session.send_realtime_input(
-                                        audio=types.Blob(
-                                            data=pcm16k,
-                                            mime_type="audio/pcm;rate=16000"
-                                        )
-                                    )
-                                    
-                                except Exception as err:
-                                    logger.error(f"Gemini send error: {err}")
-                                    break
-                                    
-                            chunks_in += 1
-                        
+                            # Forward audio directly — both use g711_ulaw, no conversion!
+                            audio_event = {
+                                "type": "input_audio_buffer.append",
+                                "audio": data["media"]["payload"],
+                            }
+                            await openai_ws.send(json.dumps(audio_event))
+
                         elif event == "stop":
-                            logger.info(f"Stream stopped ({chunks_in} chunks received)")
+                            logger.info(f"Twilio stream stopped")
                             break
-                            
+
+                except WebSocketDisconnect:
+                    logger.info("Twilio WebSocket disconnected")
+                except websockets.exceptions.ConnectionClosed:
+                    logger.info("OpenAI connection closed during send")
                 except Exception as e:
-                    logger.error(f"Twilio receiver error: {e}", exc_info=True)
+                    logger.error(f"Twilio→OpenAI error: {e}")
 
-            # ─── Gemini → Twilio ────────────────────────────────────────────
-            async def gemini_to_twilio_task():
-                nonlocal call_sid, bot_is_speaking
-                audio_out = 0
-                
+            # ── OpenAI → Twilio (forward assistant audio) ────────────────
+            async def openai_to_twilio():
+                nonlocal stream_sid
+                audio_chunks_sent = 0
                 try:
-                    async for response in gemini_session.receive():
-                        # ── Audio from model ──
-                        if response.server_content and response.server_content.model_turn:
-                            if not bot_is_speaking:
-                                bot_is_speaking = True  # Mute mic as soon as first audio arrives
-                            for part in response.server_content.model_turn.parts:
-                                if part.inline_data and part.inline_data.data:
-                                    payloads = gemini_audio_to_twilio(part.inline_data.data)
-                                    for payload in payloads:
-                                        try:
-                                            await websocket.send_json({
-                                                "event": "media",
-                                                "streamSid": stream_sid,
-                                                "media": {"payload": payload}
-                                            })
-                                        except Exception:
-                                            return
-                                    audio_out += 1
+                    async for message in openai_ws:
+                        response = json.loads(message)
+                        event_type = response.get("type", "")
 
-                        # ── Tool calls ──
-                        if response.tool_call:
-                            for fn in response.tool_call.function_calls:
-                                logger.info(f"Tool: {fn.name}({fn.args})")
-                                result = await _handle_tool_call(fn.name, fn.args, call_sid)
-                                await gemini_session.send(
-                                    input=types.LiveClientToolResponse(
-                                        function_responses=[
-                                            types.FunctionResponse(
-                                                name=fn.name,
-                                                response=result
-                                            )
-                                        ]
-                                    )
-                                )
-                        
-                        # ── Barge-in ──
-                        if response.server_content and response.server_content.interrupted:
-                            logger.info("Barge-in detected")
-                            try:
+                        # ── Audio response chunk ──────────────────────────
+                        if event_type == "response.audio.delta" and stream_sid:
+                            audio_payload = response.get("delta", "")
+                            if audio_payload:
+                                await websocket.send_json({
+                                    "event": "media",
+                                    "streamSid": stream_sid,
+                                    "media": {"payload": audio_payload},
+                                })
+                                audio_chunks_sent += 1
+
+                        # ── User interrupted (barge-in) ──────────────────
+                        elif event_type == "input_audio_buffer.speech_started":
+                            logger.info("User interruption detected — clearing Twilio buffer")
+                            if stream_sid:
                                 await websocket.send_json({
                                     "event": "clear",
-                                    "streamSid": stream_sid
+                                    "streamSid": stream_sid,
                                 })
-                            except Exception:
-                                return
+                            audio_chunks_sent = 0
 
-                        # ── Turn complete ──
-                        if response.server_content and response.server_content.turn_complete:
-                            bot_is_speaking = False
-                            logger.info(f"Turn complete ({audio_out} audio segments sent). Unmuting user.")
+                        # ── Audio response complete ──────────────────────
+                        elif event_type == "response.audio.done":
+                            logger.info(f"Audio response complete ({audio_chunks_sent} chunks sent)")
+                            audio_chunks_sent = 0
 
+                        # ── Transcript logging ───────────────────────────
+                        elif event_type == "response.audio_transcript.done":
+                            transcript = response.get("transcript", "")
+                            logger.info(f"🤖 Assistant: {transcript[:120]}")
+
+                        elif event_type == "conversation.item.input_audio_transcription.completed":
+                            transcript = response.get("transcript", "")
+                            logger.info(f"👤 User: {transcript[:120]}")
+
+                        # ── Session events ───────────────────────────────
+                        elif event_type == "session.created":
+                            logger.info("OpenAI session created")
+
+                        elif event_type == "session.updated":
+                            logger.info("OpenAI session configured")
+
+                        elif event_type == "response.done":
+                            usage = response.get("response", {}).get("usage", {})
+                            if usage:
+                                logger.info(f"Tokens: input={usage.get('input_tokens', 0)} output={usage.get('output_tokens', 0)}")
+
+                        # ── Error handling ────────────────────────────────
+                        elif event_type == "error":
+                            error_info = response.get("error", {})
+                            logger.error(f"OpenAI error: {error_info.get('message', response)}")
+
+                except websockets.exceptions.ConnectionClosed:
+                    logger.info("OpenAI WebSocket closed")
                 except Exception as e:
-                    logger.error(f"Gemini receiver error: {e}", exc_info=True)
+                    logger.error(f"OpenAI→Twilio error: {e}")
 
+            # ── Run both directions concurrently ─────────────────────────
             await asyncio.gather(
-                twilio_to_gemini_task(),
-                gemini_to_twilio_task(),
-                return_exceptions=True
+                twilio_to_openai(),
+                openai_to_twilio(),
             )
 
-    except WebSocketDisconnect:
-        logger.info("Twilio WS disconnected.")
+    except websockets.exceptions.InvalidStatusCode as e:
+        logger.error(f"Failed to connect to OpenAI Realtime API: {e}")
     except Exception as e:
-        logger.error(f"Media stream error: {e}", exc_info=True)
+        logger.error(f"WebSocket handler error: {e}", exc_info=True)
     finally:
-        logger.info(f"Cleanup stream={stream_sid}")
-
-
-async def _handle_tool_call(name: str, args: dict, call_sid: str) -> dict:
-    """Process a Gemini tool call and return the result."""
-    result = {"success": False, "message": "Unknown tool"}
-    try:
-        session = await SessionStore.get_or_create(call_sid, phone_number="ws_call")
-        
-        if name == "add_order_item":
-            menu_item = find_menu_item(args["item_name"])
-            if menu_item:
-                qty = int(args.get("quantity", 1))
-                item = OrderItem(menu_item=menu_item, quantity=qty, notes=args.get("notes", ""))
-                session.add_item(item)
-                result = {"success": True, "message": f"Added {qty}x {menu_item.name}"}
-            else:
-                result = {"success": False, "message": f"'{args['item_name']}' not found"}
-                
-        elif name == "remove_order_item":
-            if session.remove_item(args["item_name"]):
-                result = {"success": True, "message": "Removed"}
-            else:
-                result = {"success": False, "message": f"'{args['item_name']}' not in order"}
-                
-        elif name == "finalize_order":
-            session.customer_name = args.get("customer_name", "Unknown")
-            session.order_type = args.get("order_type", "pickup")
-            async with AsyncSessionLocal() as db:
-                order_id = await save_order_to_db(session, db)
-            result = {"success": True, "message": f"Order #{order_id} finalized"}
-    
-    except Exception as exc:
-        logger.error(f"Tool error '{name}': {exc}")
-        result = {"success": False, "message": str(exc)}
-    
-    return result
+        logger.info(f"Media stream session ended (call={call_sid})")
