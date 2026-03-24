@@ -6,9 +6,8 @@ Connects directly to the Google Gemini Multimodal Live API.
 import asyncio
 import json
 import logging
-import traceback
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Depends
-from sqlalchemy.ext.asyncio import AsyncSession
+import base64
+from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from google import genai
 from google.genai import types
 
@@ -44,6 +43,7 @@ STRICT RULES:
 - Confirm the caller's items and total. Ask if they want pickup or delivery.
 - You are speaking on a live phone call, so be natural and conversational.
 - ALWAYS use the provided tools (add_order_item, remove_order_item, finalize_order) to update the system. DO NOT pretend to add items without calling the tool.
+- Do NOT think out loud. Just reply concisely.
 """
 
 _TOOLS = [
@@ -89,6 +89,24 @@ _TOOLS = [
     }
 ]
 
+# Twilio expects mu-law chunks. We'll send in ~20ms segments.
+# At 8kHz mu-law (1 byte/sample): 20ms = 160 bytes
+TWILIO_CHUNK_SIZE = 160
+
+
+async def send_audio_to_twilio(websocket: WebSocket, stream_sid: str, mulaw_bytes: bytes):
+    """Send mu-law audio to Twilio in properly-sized chunks."""
+    offset = 0
+    while offset < len(mulaw_bytes):
+        chunk = mulaw_bytes[offset:offset + TWILIO_CHUNK_SIZE]
+        b64_chunk = base64.b64encode(chunk).decode('ascii')
+        await websocket.send_json({
+            "event": "media",
+            "streamSid": stream_sid,
+            "media": {"payload": b64_chunk}
+        })
+        offset += TWILIO_CHUNK_SIZE
+
 
 @router.websocket("/media-stream")
 async def media_stream(websocket: WebSocket):
@@ -128,6 +146,7 @@ async def media_stream(websocket: WebSocket):
 
             async def twilio_to_gemini_task():
                 nonlocal stream_sid, call_sid
+                audio_chunks_in = 0
                 while True:
                     message_str = await websocket.receive_text()
                     data = json.loads(message_str)
@@ -137,59 +156,50 @@ async def media_stream(websocket: WebSocket):
                         stream_sid = data["start"]["streamSid"]
                         call_sid = data["start"]["callSid"]
                         logger.info(f"Started Twilio Media Stream: {stream_sid} for call {call_sid}")
-                        # Immediately send a greeting text to Gemini to kick off the audio!
+                        # Immediately send a greeting text to Gemini
                         await gemini_session.send(input="Hello! Please greet the user warmly.", end_of_turn=True)
+                        logger.info("Sent greeting prompt to Gemini")
                     
                     elif event == "media":
                         b64_audio = data["media"]["payload"]
                         pcm16k_chunk = twilio_to_gemini(b64_audio)
-                        # Send to Gemini
                         await gemini_session.send_realtime_input(
                             audio=types.Blob(
                                 data=pcm16k_chunk,
                                 mime_type="audio/pcm;rate=16000"
                             )
                         )
+                        audio_chunks_in += 1
+                        if audio_chunks_in % 100 == 0:
+                            logger.debug(f"Sent {audio_chunks_in} audio chunks to Gemini")
                     
                     elif event == "stop":
-                        logger.info("Twilio Stream Stopped")
+                        logger.info(f"Twilio Stream Stopped (sent {audio_chunks_in} chunks total)")
                         break
 
             async def gemini_to_twilio_task():
                 nonlocal call_sid
-                audio_chunks_sent = 0
+                audio_chunks_out = 0
+                response_count = 0
                 
                 async for response in gemini_session.receive():
-                    # ── 1. Handle raw audio data (primary path for native-audio models)
-                    if response.data is not None:
-                        b64_mulaw = gemini_to_twilio(response.data)
-                        if stream_sid:
-                            await websocket.send_json({
-                                "event": "media",
-                                "streamSid": stream_sid,
-                                "media": {"payload": b64_mulaw}
-                            })
-                            audio_chunks_sent += 1
-
-                    # ── 2. Handle server_content (structured responses: model_turn, tool calls)
+                    response_count += 1
+                    
+                    # ── 1. Handle audio from server_content.model_turn.parts
                     if response.server_content and response.server_content.model_turn:
-                        for part in response.server_content.model_turn.parts:
-                            # 2a. Audio in inline_data
+                        parts = response.server_content.model_turn.parts
+                        for part in parts:
                             if part.inline_data and part.inline_data.data:
-                                b64_mulaw = gemini_to_twilio(part.inline_data.data)
+                                pcm24k_audio = part.inline_data.data
+                                mulaw_audio = gemini_to_twilio(pcm24k_audio)
                                 if stream_sid:
-                                    await websocket.send_json({
-                                        "event": "media",
-                                        "streamSid": stream_sid,
-                                        "media": {"payload": b64_mulaw}
-                                    })
-                                    audio_chunks_sent += 1
-                            
-                            # 2b. Text transcription (log it for debugging)
-                            if part.text:
-                                logger.info(f"Gemini transcript: {part.text[:100]}")
-
-                    # ── 3. Handle tool calls
+                                    await send_audio_to_twilio(
+                                        websocket, stream_sid,
+                                        base64.b64decode(mulaw_audio) if isinstance(mulaw_audio, str) else mulaw_audio
+                                    )
+                                    audio_chunks_out += 1
+                    
+                    # ── 2. Handle tool calls (top-level for native audio models)
                     if response.tool_call:
                         for fn in response.tool_call.function_calls:
                             name = fn.name
@@ -231,7 +241,6 @@ async def media_stream(websocket: WebSocket):
                                 logger.error(f"Error handling tool '{name}': {exc}")
                                 result = {"success": False, "message": str(exc)}
                             
-                            # Send tool execution result back to Gemini
                             await gemini_session.send(
                                 input=types.LiveClientToolResponse(
                                     function_responses=[
@@ -243,7 +252,7 @@ async def media_stream(websocket: WebSocket):
                                 )
                             )
                     
-                    # ── 4. Handle Interruption (Barge-In)
+                    # ── 3. Handle Interruption (Barge-In)
                     if response.server_content and response.server_content.interrupted:
                         logger.info(f"Gemini Interrupted: clearing Twilio buffer for {stream_sid}")
                         if stream_sid:
@@ -251,6 +260,10 @@ async def media_stream(websocket: WebSocket):
                                 "event": "clear",
                                 "streamSid": stream_sid
                             })
+
+                    # ── 4. Log turn completion
+                    if response.server_content and response.server_content.turn_complete:
+                        logger.info(f"Gemini turn complete (sent {audio_chunks_out} audio segments so far)")
 
             # Run both infinitely until disconnection
             await asyncio.gather(
