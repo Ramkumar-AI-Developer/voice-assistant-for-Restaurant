@@ -75,9 +75,13 @@ async def inbound_call(
             await db.rollback()
             logger.error(f"Failed to create call log: {exc}")
 
-        # Generate greeting via Gemini text API
+        # Generate greeting via Gemini text API (with fallback)
         menu_text = get_menu_text()
-        greeting = await generate_greeting(menu_text)
+        try:
+            greeting = await generate_greeting(menu_text)
+        except Exception as exc:
+            logger.warning(f"[{CallSid}] Greeting generation failed ({exc}), using fallback")
+            greeting = "Welcome to The Golden Fork! What can I get for you today?"
         session.add_message("assistant", greeting)
         logger.info(f"[{CallSid}] Greeting: '{greeting[:80]}'")
 
