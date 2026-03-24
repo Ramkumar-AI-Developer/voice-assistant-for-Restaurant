@@ -6,6 +6,7 @@ Connects directly to the Google Gemini Multimodal Live API.
 import asyncio
 import json
 import logging
+import traceback
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 from google import genai
@@ -104,18 +105,29 @@ async def media_stream(websocket: WebSocket):
     menu_text = get_menu_text()
     prompt = SYSTEM_INSTRUCTION_TEMPLATE.format(menu_text=menu_text)
 
-    config = {
-        "response_modalities": ["AUDIO"],
-        "system_instruction": {"parts": [{"text": prompt}]},
-        "tools": _TOOLS
-    }
+    config = types.LiveConnectConfig(
+        response_modalities=["AUDIO"],
+        system_instruction=types.Content(
+            parts=[types.Part(text=prompt)]
+        ),
+        tools=_TOOLS,
+        speech_config=types.SpeechConfig(
+            voice_config=types.VoiceConfig(
+                prebuilt_voice_config=types.PrebuiltVoiceConfig(
+                    voice_name="Aoede"
+                )
+            )
+        ),
+        input_audio_transcription=types.AudioTranscriptionConfig(),
+        output_audio_transcription=types.AudioTranscriptionConfig(),
+    )
 
     try:
         async with client.aio.live.connect(model=MODEL, config=config) as gemini_session:
             logger.info("Connected to Gemini Live API")
 
             async def twilio_to_gemini_task():
-                nonlocal stream_sid
+                nonlocal stream_sid, call_sid
                 while True:
                     message_str = await websocket.receive_text()
                     data = json.loads(message_str)
@@ -126,7 +138,7 @@ async def media_stream(websocket: WebSocket):
                         call_sid = data["start"]["callSid"]
                         logger.info(f"Started Twilio Media Stream: {stream_sid} for call {call_sid}")
                         # Immediately send a greeting text to Gemini to kick off the audio!
-                        await gemini_session.send(input="Hello! Please greet the user.", end_of_turn=True)
+                        await gemini_session.send(input="Hello! Please greet the user warmly.", end_of_turn=True)
                     
                     elif event == "media":
                         b64_audio = data["media"]["payload"]
@@ -144,80 +156,101 @@ async def media_stream(websocket: WebSocket):
                         break
 
             async def gemini_to_twilio_task():
+                nonlocal call_sid
+                audio_chunks_sent = 0
+                
                 async for response in gemini_session.receive():
+                    # ── 1. Handle raw audio data (primary path for native-audio models)
+                    if response.data is not None:
+                        b64_mulaw = gemini_to_twilio(response.data)
+                        if stream_sid:
+                            await websocket.send_json({
+                                "event": "media",
+                                "streamSid": stream_sid,
+                                "media": {"payload": b64_mulaw}
+                            })
+                            audio_chunks_sent += 1
+
+                    # ── 2. Handle server_content (structured responses: model_turn, tool calls)
                     if response.server_content and response.server_content.model_turn:
                         for part in response.server_content.model_turn.parts:
-                            # 1. ── Handle Audio Output
-                            if part.inline_data:
-                                pcm24k_audio = part.inline_data.data
-                                b64_mulaw = gemini_to_twilio(pcm24k_audio)
-                                await websocket.send_json({
-                                    "event": "media",
-                                    "streamSid": stream_sid,
-                                    "media": {"payload": b64_mulaw}
-                                })
+                            # 2a. Audio in inline_data
+                            if part.inline_data and part.inline_data.data:
+                                b64_mulaw = gemini_to_twilio(part.inline_data.data)
+                                if stream_sid:
+                                    await websocket.send_json({
+                                        "event": "media",
+                                        "streamSid": stream_sid,
+                                        "media": {"payload": b64_mulaw}
+                                    })
+                                    audio_chunks_sent += 1
                             
-                            # 2. ── Handle Function Calls (Tools)
-                            elif part.function_call:
-                                fn = part.function_call
-                                name = fn.name
-                                args = fn.args
-                                logger.info(f"Gemini Tool Call: {name}({args})")
+                            # 2b. Text transcription (log it for debugging)
+                            if part.text:
+                                logger.info(f"Gemini transcript: {part.text[:100]}")
+
+                    # ── 3. Handle tool calls
+                    if response.tool_call:
+                        for fn in response.tool_call.function_calls:
+                            name = fn.name
+                            args = fn.args
+                            logger.info(f"Gemini Tool Call: {name}({args})")
+                            
+                            result = {"success": False, "message": "Unknown error"}
+                            try:
+                                session = await SessionStore.get_or_create(call_sid, phone_number="ws_call")
                                 
-                                result = {"success": False, "message": "Unknown error"}
-                                try:
-                                    session = await SessionStore.get_or_create(call_sid, phone_number="ws_call")
-                                    
-                                    if name == "add_order_item":
-                                        menu_item = find_menu_item(args["item_name"])
-                                        if menu_item:
-                                            qty = int(args.get("quantity", 1))
-                                            order_item = OrderItem(
-                                                menu_item=menu_item,
-                                                quantity=qty,
-                                                notes=args.get("notes", "")
-                                            )
-                                            session.add_item(order_item)
-                                            result = {"success": True, "message": f"Added {qty}x {menu_item.name}"}
-                                        else:
-                                            result = {"success": False, "message": f"Item '{args['item_name']}' not found on menu"}
-                                            
-                                    elif name == "remove_order_item":
-                                        if session.remove_item(args["item_name"]):
-                                            result = {"success": True, "message": "Item removed"}
-                                        else:
-                                            result = {"success": False, "message": f"Item '{args['item_name']}' not currently in order"}
-                                            
-                                    elif name == "finalize_order":
-                                        session.customer_name = args.get("customer_name", "Unknown")
-                                        session.order_type = args.get("order_type", "pickup")
-                                        async with AsyncSessionLocal() as db:
-                                            order_id = await save_order_to_db(session, db)
-                                        result = {"success": True, "message": f"Order finalized with ID {order_id}"}
-                                
-                                except Exception as exc:
-                                    logger.error(f"Error handling tool '{name}': {exc}")
-                                    result = {"success": False, "message": str(exc)}
-                                
-                                # Send tool execution result back to Gemini so it understands what happened
-                                await gemini_session.send(
-                                    input=types.LiveClientToolResponse(
-                                        function_responses=[
-                                            types.FunctionResponse(
-                                                name=name,
-                                                response=result
-                                            )
-                                        ]
-                                    )
+                                if name == "add_order_item":
+                                    menu_item = find_menu_item(args["item_name"])
+                                    if menu_item:
+                                        qty = int(args.get("quantity", 1))
+                                        order_item = OrderItem(
+                                            menu_item=menu_item,
+                                            quantity=qty,
+                                            notes=args.get("notes", "")
+                                        )
+                                        session.add_item(order_item)
+                                        result = {"success": True, "message": f"Added {qty}x {menu_item.name}"}
+                                    else:
+                                        result = {"success": False, "message": f"Item '{args['item_name']}' not found on menu"}
+                                        
+                                elif name == "remove_order_item":
+                                    if session.remove_item(args["item_name"]):
+                                        result = {"success": True, "message": "Item removed"}
+                                    else:
+                                        result = {"success": False, "message": f"Item '{args['item_name']}' not currently in order"}
+                                        
+                                elif name == "finalize_order":
+                                    session.customer_name = args.get("customer_name", "Unknown")
+                                    session.order_type = args.get("order_type", "pickup")
+                                    async with AsyncSessionLocal() as db:
+                                        order_id = await save_order_to_db(session, db)
+                                    result = {"success": True, "message": f"Order finalized with ID {order_id}"}
+                            
+                            except Exception as exc:
+                                logger.error(f"Error handling tool '{name}': {exc}")
+                                result = {"success": False, "message": str(exc)}
+                            
+                            # Send tool execution result back to Gemini
+                            await gemini_session.send(
+                                input=types.LiveClientToolResponse(
+                                    function_responses=[
+                                        types.FunctionResponse(
+                                            name=name,
+                                            response=result
+                                        )
+                                    ]
                                 )
+                            )
                     
-                    # 3. ── Handle Interruption (Barge-In)
+                    # ── 4. Handle Interruption (Barge-In)
                     if response.server_content and response.server_content.interrupted:
                         logger.info(f"Gemini Interrupted: clearing Twilio buffer for {stream_sid}")
-                        await websocket.send_json({
-                            "event": "clear",
-                            "streamSid": stream_sid
-                        })
+                        if stream_sid:
+                            await websocket.send_json({
+                                "event": "clear",
+                                "streamSid": stream_sid
+                            })
 
             # Run both infinitely until disconnection
             await asyncio.gather(
