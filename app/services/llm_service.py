@@ -1,11 +1,11 @@
 """
-LLM orchestration via Google Gemini API (gemini-2.5-flash).
+LLM orchestration via Groq API (llama-3.3-70b-versatile).
 
-Uses the official google-genai Python SDK with streaming for
-lower time-to-first-token.
+Uses the official Groq Python SDK with AsyncGroq for non-blocking chat
+completions with JSON mode.
 
 Two public functions:
-  • process_utterance() — extract order actions + generate spoken reply (JSON mode)
+  • process_utterance() — extract order actions + generate spoken reply
   • generate_greeting() — one-shot greeting at call start
 """
 
@@ -15,20 +15,19 @@ import time
 import asyncio
 from typing import Optional
 
-from google import genai
-from google.genai import types
+from groq import AsyncGroq
 
 from app.config import settings
 
 logger = logging.getLogger(__name__)
 
-_client: Optional[genai.Client] = None
+_client: Optional[AsyncGroq] = None
 
 
-def _get_client() -> genai.Client:
+def _get_client() -> AsyncGroq:
     global _client
     if _client is None:
-        _client = genai.Client(api_key=settings.GEMINI_API_KEY)
+        _client = AsyncGroq(api_key=settings.GROQ_API_KEY)
     return _client
 
 
@@ -75,82 +74,60 @@ When they say pickup or delivery, include a set_type action.
 """
 
 
-# ── Streaming helper ──────────────────────────────────────────────────────────
+# ── Chat helper ───────────────────────────────────────────────────────────────
 
-async def _stream_chat(
+async def _chat(
     system_prompt: str,
     messages: list[dict],
     max_tokens: int = 300,
 ) -> tuple[str, float]:
     """
-    Stream a chat completion from Gemini and accumulate the full response.
-    Includes retry with exponential backoff for 429 rate-limit errors.
+    Send a chat completion to Groq and return the full response.
+    Includes retry with exponential backoff for rate-limit errors.
 
     Returns (full_text, latency_seconds).
     """
     client = _get_client()
     t0 = time.perf_counter()
 
-    # Convert messages from OpenAI/Groq format to Gemini format
-    contents = []
+    # Build messages list for Groq (OpenAI-compatible format)
+    groq_messages = []
     for msg in messages:
-        role = msg["role"]
-        if role == "system":
-            continue  # system prompt handled via config
-        gemini_role = "user" if role == "user" else "model"
-        contents.append(
-            types.Content(
-                role=gemini_role,
-                parts=[types.Part.from_text(text=msg["content"])],
-            )
-        )
-
-    config = types.GenerateContentConfig(
-        system_instruction=system_prompt,
-        temperature=0.3,
-        max_output_tokens=max_tokens,
-        top_p=1.0,
-        response_mime_type="application/json",
-        # Disable "thinking" mode for speed — voice bot needs fast JSON, not deep reasoning
-        thinking_config=types.ThinkingConfig(thinking_budget=0),
-    )
+        if msg["role"] == "system":
+            continue  # handled via system_prompt below
+        groq_messages.append({"role": msg["role"], "content": msg["content"]})
 
     max_retries = 3
     for attempt in range(max_retries):
         try:
-            def _sync_stream():
-                parts = []
-                for chunk in client.models.generate_content_stream(
-                    model=settings.GEMINI_MODEL,
-                    contents=contents,
-                    config=config,
-                ):
-                    try:
-                        if chunk.text:
-                            parts.append(chunk.text)
-                    except Exception:
-                        pass  # skip chunks without text (e.g. thinking chunks)
-                return "".join(parts)
+            response = await client.chat.completions.create(
+                model=settings.GROQ_LLM_MODEL,
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    *groq_messages,
+                ],
+                max_tokens=max_tokens,
+                temperature=0.3,
+                top_p=1.0,
+                response_format={"type": "json_object"},
+            )
 
-            full_text = await asyncio.get_event_loop().run_in_executor(None, _sync_stream)
-            full_text = full_text.strip()
-
+            full_text = response.choices[0].message.content.strip()
             latency = time.perf_counter() - t0
-            logger.info(f"Gemini [{latency:.2f}s] '{full_text[:100]}'")
+            logger.info(f"Groq LLM [{latency:.2f}s] '{full_text[:100]}'")
             return full_text, latency
 
         except Exception as e:
             error_str = str(e)
-            if "429" in error_str or "RESOURCE_EXHAUSTED" in error_str:
-                wait_time = (2 ** attempt) + 1  # 2s, 3s, 5s
-                logger.warning(f"Gemini 429 rate limit hit (attempt {attempt+1}/{max_retries}). Retrying in {wait_time}s...")
+            if "429" in error_str or "rate" in error_str.lower():
+                wait_time = (2 ** attempt) + 1
+                logger.warning(f"Groq 429 rate limit (attempt {attempt+1}/{max_retries}). Retrying in {wait_time}s...")
                 await asyncio.sleep(wait_time)
                 continue
             else:
                 raise
 
-    # All retries exhausted
-    raise Exception("Gemini API rate limit exceeded after all retries")
+    raise Exception("Groq API rate limit exceeded after all retries")
 
 
 # ── Public API ────────────────────────────────────────────────────────────────
@@ -167,7 +144,6 @@ async def process_utterance(
         "latency": float
     }
     """
-    # Extract system prompt from session messages
     system_prompt = ""
     filtered_messages = []
     for msg in session_messages:
@@ -176,10 +152,9 @@ async def process_utterance(
         else:
             filtered_messages.append(msg)
 
-    # Add the new user message
     filtered_messages.append({"role": "user", "content": transcript})
 
-    raw, latency = await _stream_chat(system_prompt, filtered_messages, max_tokens=300)
+    raw, latency = await _chat(system_prompt, filtered_messages, max_tokens=300)
 
     # Strip accidental markdown fences
     clean = raw.strip()
@@ -192,7 +167,7 @@ async def process_utterance(
     try:
         parsed = json.loads(clean)
     except json.JSONDecodeError:
-        logger.warning(f"Gemini returned non-JSON, wrapping as plain reply: {raw[:120]}")
+        logger.warning(f"Groq returned non-JSON, wrapping as plain reply: {raw[:120]}")
         parsed = {
             "actions": [{"type": "none"}],
             "reply": raw[:200],
@@ -208,9 +183,8 @@ async def generate_greeting(menu_text: str) -> str:
     messages = [
         {"role": "user", "content": "SYSTEM_EVENT: Call just connected. Greet the caller warmly and ask what they would like to order."},
     ]
-    raw, _ = await _stream_chat(system_prompt, messages, max_tokens=80)
+    raw, _ = await _chat(system_prompt, messages, max_tokens=80)
 
-    # Try to parse JSON reply field; fall back to raw text
     try:
         clean = raw.strip().lstrip("```json").rstrip("```").strip()
         return json.loads(clean).get("reply", raw)
@@ -221,4 +195,5 @@ async def generate_greeting(menu_text: str) -> str:
 async def close() -> None:
     global _client
     if _client is not None:
+        await _client.close()
         _client = None

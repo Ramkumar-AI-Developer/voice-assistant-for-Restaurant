@@ -17,6 +17,7 @@ class Settings(BaseSettings):
     # ── Groq (STT only) ──────────────────────────────────────────────────────
     GROQ_API_KEY: str
     GROQ_STT_MODEL: str = "whisper-large-v3"
+    GROQ_LLM_MODEL: str = "llama-3.3-70b-versatile"
 
     # ── Gemini (LLM) ─────────────────────────────────────────────────────────
     GEMINI_API_KEY: str
