@@ -84,12 +84,11 @@ ORDER_TOOLS = [
     {
         "type": "function",
         "name": "set_customer_info",
-        "description": "Set the customer's name and/or order type (pickup or delivery). Call this when the customer provides their name or specifies pickup/delivery.",
+        "description": "Set the customer's name. Call this when the customer provides their name.",
         "parameters": {
             "type": "object",
             "properties": {
                 "name": {"type": "string", "description": "Customer's name"},
-                "order_type": {"type": "string", "enum": ["pickup", "delivery"], "description": "Pickup or delivery"},
             },
         },
     },
@@ -106,13 +105,12 @@ Your job is to help callers place food orders over the phone.
 
 RULES:
 - Keep every reply short and natural — this is a phone call, not a chat.
-- Speak in a highly polite, warm, gentle, and welcoming tone, like a high-end restaurant host.
+- Speak with a sophisticated British (UK) accent in a highly polite, warm, gentle, and welcoming tone, like a high-end restaurant host.
 - Be warm but quick. No long monologues.
 - Always use the add_to_order tool when a customer orders something — do NOT just acknowledge verbally.
 - Use get_order_summary to read back the order when asked.
 - If you are unsure what the caller said, ask ONE short clarifying question.
 {name_instruction}
-- After confirming the name, ask if the order is for pickup or delivery, then use set_customer_info.
 - Then read back the full order and ask for final confirmation.
 - When they confirm, use confirm_order to finalize.
 - Do NOT invent items not on the menu. Politely say the item is unavailable.
@@ -149,7 +147,7 @@ async def execute_tool(name: str, args: dict, session: CallSession) -> str:
             
             return json.dumps({
                 "success": True,
-                "message": f"Added {quantity}x {menu_item.name} (${menu_item.price:.2f} each) to the order. Current total: ${session.order_total:.2f}",
+                "message": f"Added {quantity}x {menu_item.name} (£{menu_item.price:.2f} each) to the order. Current total: £{session.order_total:.2f}",
             })
         else:
             return json.dumps({
@@ -162,34 +160,29 @@ async def execute_tool(name: str, args: dict, session: CallSession) -> str:
         removed = session.remove_item(item_name)
         if removed:
             logger.info(f"[{session.call_sid}] Removed '{item_name}'")
-            return json.dumps({"success": True, "message": f"Removed {item_name}. Current total: ${session.order_total:.2f}"})
+            return json.dumps({"success": True, "message": f"Removed {item_name}. Current total: £{session.order_total:.2f}"})
         else:
             return json.dumps({"success": False, "message": f"'{item_name}' was not found in the current order."})
     
     elif name == "get_order_summary":
         if not session.order_items:
             return json.dumps({"summary": "The order is currently empty.", "total": 0})
-        items = [f"{oi.quantity}x {oi.menu_item.name} (${oi.subtotal:.2f})" for oi in session.order_items]
+        items = [f"{oi.quantity}x {oi.menu_item.name} (£{oi.subtotal:.2f})" for oi in session.order_items]
         return json.dumps({
             "items": items,
             "total": session.order_total,
             "customer_name": session.customer_name or "Not set",
-            "order_type": session.order_type,
         })
     
     elif name == "set_customer_info":
         name_val = args.get("name", "")
-        order_type = args.get("order_type", "")
         
         result_parts = []
         if name_val:
             session.customer_name = name_val
             result_parts.append(f"Customer name set to {name_val}")
-        if order_type in ("pickup", "delivery"):
-            session.order_type = order_type
-            result_parts.append(f"Order type set to {order_type}")
         
-        logger.info(f"[{session.call_sid}] Customer info: name={session.customer_name}, type={session.order_type}")
+        logger.info(f"[{session.call_sid}] Customer info: name={session.customer_name}")
         return json.dumps({"success": True, "message": ". ".join(result_parts) if result_parts else "No changes made"})
     
     elif name == "confirm_order":
@@ -197,7 +190,7 @@ async def execute_tool(name: str, args: dict, session: CallSession) -> str:
             return json.dumps({"success": False, "message": "Cannot confirm — order is empty."})
         
         session.stage = CallStage.COMPLETED
-        logger.info(f"[{session.call_sid}] Order confirmed — ${session.order_total:.2f}")
+        logger.info(f"[{session.call_sid}] Order confirmed — £{session.order_total:.2f}")
         
         # Save to database + send WhatsApp + SMS
         try:
@@ -213,12 +206,11 @@ async def execute_tool(name: str, args: dict, session: CallSession) -> str:
             "customer_name": session.customer_name,
             "total": session.order_total,
             "items_count": len(session.order_items),
-            "order_type": session.order_type,
         })
         
         return json.dumps({
             "success": True,
-            "message": f"Order confirmed! Total: ${session.order_total:.2f}. The kitchen has been notified. Thank the customer and say goodbye.",
+            "message": f"Order confirmed! Total: £{session.order_total:.2f}. The kitchen has been notified. Thank the customer politely and say goodbye.",
         })
     
     return json.dumps({"error": f"Unknown tool: {name}"})
@@ -292,14 +284,8 @@ async def handle_media_stream(websocket: WebSocket, call_sid: str = None):
             await openai_ws.send(json.dumps(session_config))
             logger.info("Sent session config with tools to OpenAI")
 
-            # ── Send initial greeting ─────────────────────────────────────
-            await openai_ws.send(json.dumps({
-                "type": "response.create",
-                "response": {
-                    "modalities": ["text", "audio"],
-                    "instructions": "Greet the caller warmly and ask what they would like to order today. Keep it under 20 words.",
-                }
-            }))
+            # Note: We NO LONGER send the initial greeting here. We wait for Twilio's "start" event below.
+            logger.info("Sent session config with tools to OpenAI")
 
             # ── Twilio → OpenAI ───────────────────────────────────────────
             async def twilio_to_openai():
@@ -332,6 +318,15 @@ async def handle_media_stream(websocket: WebSocket, call_sid: str = None):
                                 "call_sid": call_sid,
                                 "stream_sid": stream_sid,
                             })
+                            
+                            # Trigger greeting ONLY AFTER Twilio stream is ready
+                            await openai_ws.send(json.dumps({
+                                "type": "response.create",
+                                "response": {
+                                    "modalities": ["text", "audio"],
+                                    "instructions": "Greet the caller warmly and ask what they would like to order today. Keep it under 20 words.",
+                                }
+                            }))
 
                         elif event == "media":
                             await openai_ws.send(json.dumps({

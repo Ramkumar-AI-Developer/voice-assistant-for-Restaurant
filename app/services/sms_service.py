@@ -8,7 +8,7 @@ from app.models.menu import OrderItem
 
 logger = logging.getLogger(__name__)
 
-def send_order_sms(phone_number: str, order_id: int, items: List[OrderItem], total: float, order_type: str):
+def send_order_sms(phone_number: str, order_id: int, items: List[OrderItem], total: float):
     """
     Sends an SMS receipt to the customer using Twilio.
     Executed in a background thread to avoid blocking the main async loop.
@@ -27,18 +27,17 @@ def send_order_sms(phone_number: str, order_id: int, items: List[OrderItem], tot
         
         # Format the receipt
         receipt_lines = [f"🧾 The Golden Fork - Order #{order_id}"]
-        receipt_lines.append(f"Type: {order_type.capitalize()}")
         receipt_lines.append("---")
         
         for item in items:
             line = f"{item.quantity}x {item.menu_item.name}"
             if item.notes:
                 line += f" ({item.notes})"
-            line += f" - ${item.quantity * item.menu_item.price:.2f}"
+            line += f" - £{item.quantity * item.menu_item.price:.2f}"
             receipt_lines.append(line)
             
         receipt_lines.append("---")
-        receipt_lines.append(f"Total: ${total:.2f}")
+        receipt_lines.append(f"Total: £{total:.2f}")
         receipt_lines.append("Thank you for your order! We'll begin preparing it right away.")
 
         message_body = "\n".join(receipt_lines)
@@ -59,6 +58,6 @@ def send_order_sms(phone_number: str, order_id: int, items: List[OrderItem], tot
     except Exception as e:
         logger.error(f"Failed to send SMS receipt to {phone_number}: {e}")
 
-async def send_order_sms_async(phone_number: str, order_id: int, items: List[OrderItem], total: float, order_type: str):
+async def send_order_sms_async(phone_number: str, order_id: int, items: List[OrderItem], total: float):
     """Async wrapper around the Twilio sync sending client."""
-    await asyncio.to_thread(send_order_sms, phone_number, order_id, items, total, order_type)
+    await asyncio.to_thread(send_order_sms, phone_number, order_id, items, total)

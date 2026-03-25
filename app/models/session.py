@@ -32,7 +32,6 @@ class CallSession:
     call_sid: str
     phone_number: str
     customer_name: str           = ""       # Collected during call
-    order_type: str              = "pickup" # pickup / delivery / dine_in
     created_at: float            = field(default_factory=time.time)
     last_active: float           = field(default_factory=time.time)
     stage: CallStage             = CallStage.GREETING
@@ -71,8 +70,8 @@ class CallSession:
         lines = ["Here is your order:"]
         for oi in self.order_items:
             note = f" ({oi.notes})" if oi.notes else ""
-            lines.append(f"  {oi.quantity} {oi.menu_item.name}{note} — ${oi.subtotal:.2f}")
-        lines.append(f"  Total: ${self.order_total:.2f}")
+            lines.append(f"  {oi.quantity} {oi.menu_item.name}{note} — £{oi.subtotal:.2f}")
+        lines.append(f"  Total: £{self.order_total:.2f}")
         return "\n".join(lines)
 
     # ── Conversation helpers ──────────────────────────────────────────────────
@@ -94,7 +93,6 @@ class CallSession:
             "call_sid":      self.call_sid,
             "phone":         self.phone_number,
             "customer_name": self.customer_name,
-            "order_type":    self.order_type,
             "stage":         self.stage.value,
             "order":         [oi.to_dict() for oi in self.order_items],
             "total":         self.order_total,

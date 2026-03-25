@@ -17,7 +17,6 @@ def send_order_to_cook(
     customer_name: str,
     customer_phone: str,
     order_items: list[dict],
-    order_type: str = "Pickup",
     total: float = 0.0,
 ) -> bool:
     """
@@ -41,8 +40,7 @@ def send_order_to_cook(
             f"👤 Customer: {customer_name}\n"
             f"📞 Phone: {customer_phone}\n\n"
             f"🛒 Order:\n{items_text}\n\n"
-            f"💰 Total: ${total:.2f}\n\n"
-            f"📍 Type: {order_type.replace('_', ' ').title()}\n\n"
+            f"💰 Total: £{total:.2f}\n\n"
             f"⏰ Time: {current_time}\n\n"
             f"✅ Please confirm and enter into POS"
         )

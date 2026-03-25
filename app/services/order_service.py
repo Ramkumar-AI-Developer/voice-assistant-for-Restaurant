@@ -70,13 +70,7 @@ def apply_actions(session: CallSession, actions: list[dict]) -> None:
                 session.customer_name = name
                 logger.info(f"[{session.call_sid}] Customer name set: {name}")
 
-        elif atype == "set_type":
-            order_type = action.get("order_type", "pickup").strip().lower()
-            if order_type in ("pickup", "delivery", "dine_in"):
-                session.order_type = order_type
-                logger.info(f"[{session.call_sid}] Order type set: {order_type}")
-
-        elif atype in ("repeat_order", "none"):
+        elif atype in ("repeat_order", "none", "set_type"):
             pass  # handled purely in the LLM reply text
 
         else:
@@ -91,7 +85,7 @@ async def save_order_to_db(session: CallSession, db: AsyncSession) -> int:
     order = Order(
         customer_name=session.customer_name or "Unknown",
         customer_phone=session.phone_number,
-        order_type=session.order_type,
+        order_type="pickup",
         status="confirmed",
         total=session.order_total,
         call_sid=session.call_sid,
@@ -119,7 +113,6 @@ async def save_order_to_db(session: CallSession, db: AsyncSession) -> int:
             customer_name=session.customer_name or "Unknown",
             customer_phone=session.phone_number,
             order_items=[oi.to_dict() for oi in session.order_items],
-            order_type=session.order_type,
             total=session.order_total,
         )
     except Exception as exc:
@@ -135,7 +128,6 @@ async def save_order_to_db(session: CallSession, db: AsyncSession) -> int:
                 order_id=order.id,
                 items=session.order_items,
                 total=total,
-                order_type=session.order_type
             )
         )
     except Exception as exc:
