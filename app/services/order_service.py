@@ -152,9 +152,21 @@ async def save_call_log(session: CallSession, db: AsyncSession, order_id: int = 
     result = await db.execute(select(CallLog).where(CallLog.call_sid == session.call_sid))
     call_log = result.scalar_one_or_none()
 
+    from app.models.db_models import CallStatus
+    from app.models.session import CallStage
+
+    # Map conversational stage to formal call status for the database logger
+    if session.stage == CallStage.COMPLETED:
+        mapped_status = CallStatus.COMPLETED.value
+    elif session.stage == CallStage.ABANDONED:
+        mapped_status = CallStatus.ABANDONED.value
+    else:
+        # If the call ends while greeting, taking order, etc. without completing
+        mapped_status = CallStatus.ABANDONED.value
+
     if call_log:
         call_log.customer_name = session.customer_name or "Unknown"
-        call_log.status = session.stage.value
+        call_log.status = mapped_status
         call_log.duration_seconds = int(time.time() - session.created_at)
         call_log.order_id = order_id
     else:
@@ -162,7 +174,7 @@ async def save_call_log(session: CallSession, db: AsyncSession, order_id: int = 
             call_sid=session.call_sid,
             phone_number=session.phone_number,
             customer_name=session.customer_name or "Unknown",
-            status=session.stage.value,
+            status=mapped_status,
             duration_seconds=int(time.time() - session.created_at),
             order_id=order_id,
         )

@@ -101,18 +101,18 @@ ORDER_TOOLS = [
     },
 ]
 
-# System instructions for the voice assistant
-SYSTEM_MESSAGE = """You are Aria, a friendly and efficient voice assistant for "The Golden Fork" restaurant.
+SYSTEM_MESSAGE = """You are Aria, an elegant, polite, and gentle voice assistant for "The Golden Fork" restaurant.
 Your job is to help callers place food orders over the phone.
 
 RULES:
 - Keep every reply short and natural — this is a phone call, not a chat.
+- Speak in a highly polite, warm, gentle, and welcoming tone, like a high-end restaurant host.
 - Be warm but quick. No long monologues.
 - Always use the add_to_order tool when a customer orders something — do NOT just acknowledge verbally.
 - Use get_order_summary to read back the order when asked.
 - If you are unsure what the caller said, ask ONE short clarifying question.
-- When the caller is done ordering, ask for their NAME, then use set_customer_info.
-- After getting the name, ask if it's for pickup or delivery, then use set_customer_info.
+{name_instruction}
+- After confirming the name, ask if the order is for pickup or delivery, then use set_customer_info.
 - Then read back the full order and ask for final confirmation.
 - When they confirm, use confirm_order to finalize.
 - Do NOT invent items not on the menu. Politely say the item is unavailable.
@@ -227,16 +227,21 @@ async def execute_tool(name: str, args: dict, session: CallSession) -> str:
 # ── WebSocket handler ─────────────────────────────────────────────────────────
 
 @router.websocket("/media-stream")
-async def handle_media_stream(websocket: WebSocket):
+async def handle_media_stream(websocket: WebSocket, call_sid: str = None):
     """Bridge Twilio's bidirectional audio stream with OpenAI's Realtime API."""
     await websocket.accept()
-    logger.info("Twilio WebSocket connected on /media-stream")
+    logger.info(f"Twilio WebSocket connected on /media-stream (query call_sid={call_sid})")
 
     stream_sid = None
-    call_sid = None
     session = None
     order_confirmed = False
     shutdown_event = asyncio.Event()  # Signal both loops to stop
+    
+    # Pre-fetch session if call_sid was provided in the URL
+    if call_sid:
+        session = await SessionStore.get(call_sid)
+        if session and session.customer_name:
+            logger.info(f"[{call_sid}] Pre-fetched session for returning customer: {session.customer_name}")
 
     headers = {
         "Authorization": f"Bearer {settings.OPENAI_API_KEY}",
@@ -253,6 +258,15 @@ async def handle_media_stream(websocket: WebSocket):
 
             # ── Configure session with tools ──────────────────────────────
             menu_text = get_menu_text()
+            
+            # Dynamic prompt behavior based on returning caller vs new caller
+            if session and session.customer_name:
+                name_instruction = f"- The caller is a returning customer named {session.customer_name}. Greet them warmly by name, and DO NOT ask for their name again."
+            else:
+                name_instruction = "- When the caller is done ordering, politely ask for their NAME, then use set_customer_info."
+                
+            instructions = SYSTEM_MESSAGE.format(menu=menu_text, name_instruction=name_instruction)
+
             session_config = {
                 "type": "session.update",
                 "session": {
@@ -264,8 +278,8 @@ async def handle_media_stream(websocket: WebSocket):
                     },
                     "input_audio_format": "g711_ulaw",
                     "output_audio_format": "g711_ulaw",
-                    "voice": "shimmer",
-                    "instructions": SYSTEM_MESSAGE.format(menu=menu_text),
+                    "voice": "coral",
+                    "instructions": instructions,
                     "modalities": ["text", "audio"],
                     "temperature": 0.8,
                     "tools": ORDER_TOOLS,
@@ -299,16 +313,20 @@ async def handle_media_stream(websocket: WebSocket):
 
                         if event == "start":
                             stream_sid = data["start"]["streamSid"]
-                            call_sid = data["start"]["callSid"]
+                            tw_call_sid = data["start"]["callSid"]
+                            if not call_sid:
+                                call_sid = tw_call_sid
+                                
                             logger.info(f"Stream started: {stream_sid} call={call_sid}")
                             
                             # Get session created by call.py (has correct phone number)
-                            session = await SessionStore.get(call_sid)
                             if not session:
-                                # Fallback — extract phone from Twilio start event if available
-                                custom_params = data["start"].get("customParameters", {})
-                                phone = custom_params.get("callerPhone", "unknown")
-                                session = await SessionStore.create(call_sid, phone_number=phone)
+                                session = await SessionStore.get(call_sid)
+                                if not session:
+                                    # Fallback — extract phone from Twilio start event if available
+                                    custom_params = data["start"].get("customParameters", {})
+                                    phone = custom_params.get("callerPhone", "unknown")
+                                    session = await SessionStore.create(call_sid, phone_number=phone)
                             
                             await broadcast_dashboard_event("call_started", {
                                 "call_sid": call_sid,

@@ -49,8 +49,30 @@ async def inbound_call(
     call_rate_tracker[From] = current_calls + 1
 
     try:
+        # Check if they are a returning caller to avoid asking for name
+        from sqlalchemy import select, desc
+        from app.models.db_models import Order
+        customer_name = ""
+        if From and From != "unknown":
+            try:
+                stmt = select(Order.customer_name).where(
+                    Order.customer_phone == From,
+                    Order.customer_name != "Unknown",
+                    Order.customer_name != ""
+                ).order_by(desc(Order.created_at)).limit(1)
+                
+                res = await db.execute(stmt)
+                prev_name = res.scalar_one_or_none()
+                if prev_name:
+                    customer_name = prev_name
+                    logger.info(f"[{CallSid}] Recognized returning caller: {customer_name}")
+            except Exception as e:
+                logger.error(f"Failed to lookup returning caller: {e}")
+
         # Create session
         session = await SessionStore.create(call_sid=CallSid, phone_number=From)
+        if customer_name:
+            session.customer_name = customer_name
 
         # Create initial call log entry in DB
         from sqlalchemy import select
@@ -71,7 +93,9 @@ async def inbound_call(
             logger.error(f"Failed to create call log: {exc}")
 
         # Open bidirectional audio stream to our WebSocket handler
-        ws_url = settings.BASE_URL.replace("https://", "wss://").replace("http://", "ws://") + "/media-stream"
+        # We append call_sid so websocket.py can fetch the session BEFORE starting OpenAI
+        ws_base = settings.BASE_URL.replace("https://", "wss://").replace("http://", "ws://")
+        ws_url = f"{ws_base}/media-stream?call_sid={CallSid}"
         
         twiml = f"""<?xml version="1.0" encoding="UTF-8"?>
 <Response>
