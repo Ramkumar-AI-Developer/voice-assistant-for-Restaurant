@@ -105,6 +105,7 @@ Your job is to help callers place food orders over the phone.
 
 RULES:
 - Keep every reply short and natural — this is a phone call, not a chat.
+- You MUST speak strictly in English. Do NOT speak Spanish or any other language, regardless of what you hear.
 - Speak with a British (UK) accent. Be casual, conversational, and completely human-like.
 - Use natural filler words occasionally (like "hmm", "let me see", "yeah", "sure") so you don't sound like a robot. Do not sound stiff or overly formal.
 - Be warm but quick. No long monologues.
@@ -476,10 +477,13 @@ async def handle_media_stream(websocket: WebSocket, call_sid: str = None):
                             error_info = response.get("error", {})
                             logger.error(f"OpenAI error: {error_info.get('message', response)}")
 
+                except WebSocketDisconnect:
+                    logger.info("Twilio WebSocket disconnected (caller hung up)")
+                    shutdown_event.set()
                 except websockets.exceptions.ConnectionClosed:
                     logger.info("OpenAI WebSocket closed")
                 except Exception as e:
-                    logger.error(f"OpenAI→Twilio error: {e}", exc_info=True)
+                    logger.error(f"OpenAI→Twilio error: {e}", exc_info=False)
 
             # ── Run both directions concurrently ──────────────────────────
             await asyncio.gather(twilio_to_openai(), openai_to_twilio())
