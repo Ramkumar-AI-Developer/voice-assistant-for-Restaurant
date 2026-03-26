@@ -29,7 +29,7 @@ router = APIRouter()
 logger = logging.getLogger(__name__)
 
 # OpenAI Realtime API endpoint
-OPENAI_REALTIME_URL = "wss://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview-2024-12-17"
+OPENAI_REALTIME_URL = "wss://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview"
 
 # ── Dashboard event bus (connected frontends) ─────────────────────────────────
 dashboard_clients: set[WebSocket] = set()
@@ -105,7 +105,8 @@ Your job is to help callers place food orders over the phone.
 
 RULES:
 - Keep every reply short and natural — this is a phone call, not a chat.
-- Speak with a sophisticated British (UK) accent in a highly polite, warm, gentle, and welcoming tone, like a high-end restaurant host.
+- Speak with a British (UK) accent. Be casual, conversational, and completely human-like.
+- Use natural filler words occasionally (like "hmm", "let me see", "yeah", "sure") so you don't sound like a robot. Do not sound stiff or overly formal.
 - Be warm but quick. No long monologues.
 - Always use the add_to_order tool when a customer orders something — do NOT just acknowledge verbally.
 - Use get_order_summary to read back the order when asked.
