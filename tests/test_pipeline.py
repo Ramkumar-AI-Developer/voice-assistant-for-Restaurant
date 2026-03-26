@@ -53,9 +53,9 @@ def _ok(msg: str) -> None:
 async def test_menu_text():
     _header("TEST 1 — Menu text generation")
     menu = get_menu_text()
-    assert "Classic Burger" in menu, "Classic Burger missing"
-    assert "Margherita Pizza" in menu, "Margherita Pizza missing"
-    assert "Coffee" in menu, "Coffee missing"
+    assert "Masala Dosa" in menu, "Masala Dosa missing"
+    assert "Gobi 65" in menu, "Gobi 65 missing"
+    assert "Filter Coffee" in menu, "Filter Coffee missing"
     _ok("Menu text contains expected items")
     print(menu)
 
@@ -77,9 +77,9 @@ async def test_order_conversation():
     session.add_message("system", sys_prompt)
 
     turns = [
-        "I'd like a Classic Burger please",
-        "And can I also get a Coke",
-        "Actually make that two burgers — no onion on both",
+        "I'd like a Masala Dosa please",
+        "And can I also get a Filter Coffee",
+        "Actually make that two dosas — with extra chutney on both",
         "Can you tell me what I have so far",
         "That's everything, I'd like to confirm my order",
     ]
@@ -99,9 +99,9 @@ async def test_order_conversation():
 
         print(f"  ARIA  ◀  {reply}  [{latency:.2f}s]")
         print(f"  actions : {actions}")
-        print(f"  order   : {len(session.order_items)} items  total=${session.order_total:.2f}")
+        print(f"  order   : {len(session.order_items)} items  total=£{session.order_total:.2f}")
 
-    _ok(f"Conversation complete — final total ${session.order_total:.2f}")
+    _ok(f"Conversation complete — final total £{session.order_total:.2f}")
     print(f"\n{session.order_summary_text()}")
 
 
@@ -114,19 +114,19 @@ async def test_order_mutations():
     session = CallSession(call_sid="TEST002", phone_number="+1111111111")
 
     # Add
-    apply_actions(session, [{"type": "add", "item_name": "Classic Burger", "quantity": 2, "notes": "no onion"}])
+    apply_actions(session, [{"type": "add", "item_name": "Masala Dosa", "quantity": 2, "notes": "extra spicy"}])
     assert len(session.order_items) == 1
     assert session.order_items[0].quantity == 2
-    assert session.order_total == round(12.99 * 2, 2)
+    assert session.order_total == round(6.99 * 2, 2)
     _ok("add action works")
 
     # Dedup merge
-    apply_actions(session, [{"type": "add", "item_name": "Classic Burger", "quantity": 1, "notes": "no onion"}])
+    apply_actions(session, [{"type": "add", "item_name": "Masala Dosa", "quantity": 1, "notes": "extra spicy"}])
     assert session.order_items[0].quantity == 3
     _ok("duplicate item merges correctly")
 
     # Add a second distinct item
-    apply_actions(session, [{"type": "add", "item_name": "Coke", "quantity": 1, "notes": ""}])
+    apply_actions(session, [{"type": "add", "item_name": "Sprite", "quantity": 1, "notes": ""}])
     # "Coke" won't match anything — item count stays the same
     _ok("unknown item rejected gracefully")
 
@@ -135,7 +135,7 @@ async def test_order_mutations():
     _ok("second item added")
 
     # Remove
-    apply_actions(session, [{"type": "remove", "item_name": "burger"}])
+    apply_actions(session, [{"type": "remove", "item_name": "dosa"}])
     assert len(session.order_items) == 1
     _ok("remove action works")
 
@@ -146,7 +146,7 @@ async def test_order_mutations():
 
     # Cancel (new session)
     s2 = CallSession(call_sid="TEST003", phone_number="+2222222222")
-    apply_actions(s2, [{"type": "add", "item_name": "Pizza", "quantity": 1, "notes": ""}])
+    apply_actions(s2, [{"type": "add", "item_name": "Gobi 65", "quantity": 1, "notes": ""}])
     apply_actions(s2, [{"type": "cancel"}])
     assert s2.stage == CallStage.ABANDONED
     assert len(s2.order_items) == 0

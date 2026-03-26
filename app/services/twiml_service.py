@@ -98,7 +98,7 @@ def order_placed_twiml(total: float) -> str:
     _say(root, (
         f"Perfect! Your order has been placed and your total is ${total:.2f}. "
         "We will have it ready for you shortly. "
-        "Thank you for calling The Golden Fork. Goodbye!"
+        "Thank you for calling Vasantha Vilas. Goodbye!"
     ))
     SubElement(root, "Hangup")
     return _xml(root)

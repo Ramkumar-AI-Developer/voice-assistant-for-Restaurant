@@ -102,7 +102,7 @@ async def inbound_call(
     <Connect>
         <Stream url="{ws_url}" />
     </Connect>
-    <Say>Thank you for calling The Golden Fork. Goodbye!</Say>
+    <Say>Thank you for calling Vasantha Vilas. Goodbye!</Say>
 </Response>"""
         logger.info(f"[{CallSid}] Streaming to {ws_url}")
         return Response(content=twiml, media_type="application/xml")

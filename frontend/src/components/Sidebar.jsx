@@ -25,9 +25,9 @@ export default function Sidebar({ user, onLogout }) {
     <aside className="sidebar">
       <div className="sidebar-header">
         <div className="sidebar-logo">
-          <div className="sidebar-logo-icon">🍴</div>
+          <img src="/logo.png" alt="Vasantha Vilas" className="sidebar-logo-img" style={{ width: '40px', height: '40px', borderRadius: '8px' }} />
           <div>
-            <h1>Golden Fork</h1>
+            <h1>Vasantha Vilas</h1>
             <p>AI Voice Dashboard</p>
           </div>
         </div>
