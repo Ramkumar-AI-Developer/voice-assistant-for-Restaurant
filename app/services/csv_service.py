@@ -149,19 +149,19 @@ async def import_menu_items(db: AsyncSession, items: list[dict]) -> dict:
 def generate_excel_template() -> bytes:
     """Generate a sample Excel template for menu upload."""
     data = {
-        "Name": ["Garlic Bread", "Classic Burger", "Margherita Pizza"],
-        "Price": [3.99, 12.99, 13.99],
+        "Name": ["Masala Dosa", "Gobi 65", "Filter Coffee"],
+        "Price": [6.99, 8.50, 2.50],
         "Description": [
-            "Toasted bread with garlic butter",
-            "Beef patty, lettuce, tomato, pickles",
-            "Tomato, fresh mozzarella, basil",
+            "Crispy rice crepe served with potato masala, sambar & chutneys",
+            "Battered cauliflower florets deep fried with spices and chilli paste",
+            "Traditional South Indian filter coffee",
         ],
-        "Category": ["Starters", "Mains", "Mains"],
+        "Category": ["Dosas", "Starters", "Hot Beverages"],
         "Available": ["Yes", "Yes", "Yes"],
         "Customisations": [
             "",
-            "no onion, extra cheese, gluten-free bun",
-            "thin crust, gluten-free base, extra cheese",
+            "dry, gravy",
+            "",
         ],
     }
     df = pd.DataFrame(data)

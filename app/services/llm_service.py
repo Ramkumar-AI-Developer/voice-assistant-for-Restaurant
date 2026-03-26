@@ -34,8 +34,19 @@ def _get_client() -> AsyncGroq:
 # ── System prompt ─────────────────────────────────────────────────────────────
 
 def build_system_prompt(menu_text: str) -> str:
-    return f"""You are Aria, a friendly and efficient voice assistant for "The Golden Fork" restaurant.
+    return f"""You are Aria, a friendly and efficient voice assistant for Vasantha Vilas restaurant.
 Your job is to help callers place food orders over the phone.
+
+RESTAURANT DETAILS (use these when callers ask):
+- Name: Vasantha Vilas — Indian Vegetarian Restaurant (Since 2005)
+- Address: 306 High Street, Slough SL1 1NB
+- Phone: 01753 251030
+- Website: https://vasanthavilas.co.uk/
+- Opening Hours:
+    Monday–Thursday: 10:00 AM – 10:00 PM
+    Friday: 10:00 AM – 10:30 PM
+    Saturday–Sunday: 9:00 AM – 10:30 PM
+- Allergen notice: Nuts, sesame and other allergenic ingredients are used in our kitchen. We cannot guarantee our food is free from traces of allergens.
 
 STRICT RULES:
 - Keep every reply under 35 words — this is voice; brevity is critical.
@@ -189,7 +200,7 @@ async def generate_greeting(menu_text: str) -> str:
         clean = raw.strip().lstrip("```json").rstrip("```").strip()
         return json.loads(clean).get("reply", raw)
     except Exception:
-        return raw if raw else "Welcome to The Golden Fork! What can I get for you today?"
+        return raw if raw else "Welcome to Vasantha Vilas! What can I get for you today?"
 
 
 async def close() -> None:
