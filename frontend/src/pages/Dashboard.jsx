@@ -84,16 +84,26 @@ export default function Dashboard() {
   const today = stats?.today || {};
   const totals = stats?.totals || {};
 
+  const getGreeting = () => {
+    const hour = new Date().getHours();
+    if (hour < 12) return 'Good Morning';
+    if (hour < 17) return 'Good Afternoon';
+    return 'Good Evening';
+  };
+
   return (
     <div>
-      <div className="page-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-        <div>
-          <h1>Dashboard</h1>
-          <p>Overview of your restaurant's AI voice assistant performance</p>
-        </div>
-        <div className="live-indicator">
-          <div className="live-dot" />
-          {wsConnected ? 'Live' : 'Reconnecting...'}
+      {/* ── Welcome Banner ───────────────────────────────────────────────── */}
+      <div className="welcome-banner">
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+          <div>
+            <h1>{getGreeting()}, Vasantha Vilas 🍃</h1>
+            <p>Here's how your AI voice assistant is performing today</p>
+          </div>
+          <div className="live-indicator">
+            <div className="live-dot" />
+            {wsConnected ? 'Live' : 'Reconnecting...'}
+          </div>
         </div>
       </div>
 
@@ -106,7 +116,7 @@ export default function Dashboard() {
         </div>
         <div className="stat-card">
           <div className="stat-icon green"><HiOutlineCurrencyDollar /></div>
-          <div className="stat-value">${(today.revenue || 0).toFixed(2)}</div>
+          <div className="stat-value">₹{(today.revenue || 0).toFixed(2)}</div>
           <div className="stat-label">Revenue Today</div>
         </div>
         <div className="stat-card">
@@ -135,7 +145,7 @@ export default function Dashboard() {
                 <div key={i} style={{ flex: 1, textAlign: 'center' }}>
                   <div style={{
                     height: `${height}px`,
-                    background: 'var(--gradient-primary)',
+                    background: 'var(--gradient-gold)',
                     borderRadius: '4px 4px 0 0',
                     transition: 'height 0.5s ease',
                     marginBottom: 6,
@@ -159,7 +169,7 @@ export default function Dashboard() {
             </div>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <span style={{ color: 'var(--text-secondary)', fontSize: 14 }}>Total Revenue</span>
-              <span style={{ fontSize: 18, fontWeight: 700, color: 'var(--success)' }}>${(totals.revenue || 0).toFixed(2)}</span>
+              <span style={{ fontSize: 18, fontWeight: 700, color: 'var(--success)' }}>₹{(totals.revenue || 0).toFixed(2)}</span>
             </div>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <span style={{ color: 'var(--text-secondary)', fontSize: 14 }}>Total Calls</span>
@@ -184,11 +194,12 @@ export default function Dashboard() {
             {recentEvents.map((evt, i) => (
               <div key={i} style={{
                 display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-                padding: '8px 12px', background: 'var(--bg-primary)', borderRadius: 'var(--radius-sm)',
+                padding: '10px 14px', background: 'var(--bg-warm)', borderRadius: 'var(--radius-sm)',
                 fontSize: 13, animation: i === 0 ? 'fadeIn 0.3s' : 'none',
+                borderLeft: '3px solid var(--accent-gold)',
               }}>
                 <span>
-                  {evt.type === 'new_order' && `🛒 New order from ${evt.data?.customer_name || 'customer'} — $${evt.data?.total?.toFixed(2) || '0.00'}`}
+                  {evt.type === 'new_order' && `🛒 New order from ${evt.data?.customer_name || 'customer'} — ₹${evt.data?.total?.toFixed(2) || '0.00'}`}
                   {evt.type === 'call_started' && `📞 Call started`}
                   {evt.type === 'call_ended' && `📴 Call ended (${evt.data?.duration || 0}s)`}
                   {evt.type === 'order_update' && `➕ ${evt.data?.item || 'Item'} added to order`}
@@ -224,7 +235,7 @@ export default function Dashboard() {
                   <tr key={o.id}>
                     <td style={{ fontWeight: 600 }}>#{o.id}</td>
                     <td>{o.customer_name}</td>
-                    <td style={{ fontWeight: 600, color: 'var(--success)' }}>${o.total?.toFixed(2)}</td>
+                    <td style={{ fontWeight: 600, color: 'var(--success)' }}>₹{o.total?.toFixed(2)}</td>
                     <td><span className={`badge badge-${getStatusColor(o.status)}`}>{o.status}</span></td>
                     <td style={{ color: 'var(--text-muted)' }}>{o.created_at ? new Date(o.created_at).toLocaleTimeString() : '-'}</td>
                   </tr>
