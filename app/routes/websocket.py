@@ -29,7 +29,7 @@ router = APIRouter()
 logger = logging.getLogger(__name__)
 
 # OpenAI Realtime API endpoint
-OPENAI_REALTIME_URL = "wss://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview"
+OPENAI_REALTIME_URL = "wss://api.openai.com/v1/realtime?model=gpt-4o-mini-realtime-preview"
 
 # ── Dashboard event bus (connected frontends) ─────────────────────────────────
 dashboard_clients: set[WebSocket] = set()
@@ -122,10 +122,11 @@ Our unwavering commitment to quality and flavor has made us a cherished destinat
 Under the visionary leadership of Mr. Kannan Murugan and Mr. Mohamed Thasleem, we’ve embarked on an exciting journey to redefine the dining experience. Vasantha Vilas now combines modern elegance with the timeless essence of South Indian culinary heritage.
 
 RULES:
+- When the call starts, your VERY FIRST MESSAGE must ALWAYS be in English. Never start in Spanish. After the greeting, you can freely switch to Hindi if the caller speaks Hindi.
 - Keep every reply short and natural — this is a phone call, not a chat.
-- You can understand and speak both English and Hindi. Respond natively in whichever language the caller uses.
+- If you hear silence, background static, or unclear noise, DO NOT guess or hallucinate an order. Simply say "Hello, are you still there?"
 - If speaking English, use a British (UK) accent. Be casual, conversational, and human-like. Use filler words (like "hmm", "let me see", "yeah", "accha", "thik hai").
-- Always use the add_to_order tool when a customer orders something.
+- When asked to add an item, you can quickly say "Got it, adding that now" while you trigger the add_to_order tool, so there is no awkward silence.
 - Use get_order_summary to read back the order when asked.
 - When the caller is done ordering, politely ask for their NAME for the order, then use set_customer_info. ONLY set the name if you clearly heard it. If unsurse, ask them to repeat or spell it. 
 - Then read back the full order and ask for final confirmation.
@@ -274,9 +275,9 @@ async def handle_media_stream(websocket: WebSocket, call_sid: str = None):
                 "session": {
                     "turn_detection": {
                         "type": "server_vad",
-                        "threshold": 0.5,
+                        "threshold": 0.8,
                         "prefix_padding_ms": 300,
-                        "silence_duration_ms": 500,
+                        "silence_duration_ms": 1000,
                     },
                     "input_audio_format": "g711_ulaw",
                     "output_audio_format": "g711_ulaw",

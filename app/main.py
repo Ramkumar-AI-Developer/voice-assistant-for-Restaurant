@@ -23,7 +23,7 @@ from fastapi.responses import JSONResponse
 
 from app.routes import call, webhook, health, websocket
 from app.routes import auth, menu_api, orders_api, calls_api, dashboard_api
-from app.services import stt_service, llm_service
+
 from app.services.session_store import SessionStore
 from app.services.twilio_validator import validate_twilio_request
 from app.config import settings
@@ -81,8 +81,7 @@ async def lifespan(app: FastAPI):
 
     logger.info("Shutting down ...")
     await SessionStore.close()
-    await stt_service.close()
-    await llm_service.close()
+
     await close_db()
 
 
