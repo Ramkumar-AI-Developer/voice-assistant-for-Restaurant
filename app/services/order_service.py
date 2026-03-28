@@ -55,7 +55,7 @@ def apply_actions(session: CallSession, actions: list[dict]) -> None:
         elif atype == "confirm":
             if session.order_items:
                 session.stage = CallStage.COMPLETED
-                logger.info(f"[{session.call_sid}] Order confirmed — total ${session.order_total:.2f}")
+                logger.info(f"[{session.call_sid}] Order confirmed — total £{session.order_total:.2f}")
             else:
                 logger.warning(f"[{session.call_sid}] Confirm with empty order — ignored")
 

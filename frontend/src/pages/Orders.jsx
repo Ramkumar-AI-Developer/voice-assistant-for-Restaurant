@@ -110,7 +110,7 @@ export default function Orders() {
                       <td>{o.customer_name}</td>
                       <td style={{ fontFamily: 'monospace', fontSize: 12 }}>{o.customer_phone}</td>
                       <td>{o.items?.length || 0} items</td>
-                      <td style={{ fontWeight: 700, color: 'var(--success)' }}>${o.total?.toFixed(2)}</td>
+                      <td style={{ fontWeight: 700, color: 'var(--success)' }}>£{o.total?.toFixed(2)}</td>
                       <td><span className="badge badge-muted">{o.order_type}</span></td>
                       <td><span className={`badge badge-${statusColor(o.status)}`}>{o.status}</span></td>
                       <td style={{ color: 'var(--text-muted)', fontSize: 12 }}>{o.created_at ? new Date(o.created_at).toLocaleString() : '-'}</td>
@@ -158,14 +158,14 @@ export default function Orders() {
                     <tr key={i}>
                       <td>{item.name}</td>
                       <td>{item.quantity}</td>
-                      <td>${item.unit_price?.toFixed(2)}</td>
-                      <td style={{ fontWeight: 600 }}>${item.subtotal?.toFixed(2)}</td>
+                      <td>£{item.unit_price?.toFixed(2)}</td>
+                      <td style={{ fontWeight: 600 }}>£{item.subtotal?.toFixed(2)}</td>
                       <td style={{ color: 'var(--text-muted)' }}>{item.notes || '—'}</td>
                     </tr>
                   ))}
                 </tbody>
               </table>
-              <div style={{ textAlign: 'right', fontWeight: 700, fontSize: 16, color: 'var(--success)' }}>Total: ${selectedOrder.total?.toFixed(2)}</div>
+              <div style={{ textAlign: 'right', fontWeight: 700, fontSize: 16, color: 'var(--success)' }}>Total: £{selectedOrder.total?.toFixed(2)}</div>
             </div>
 
             <div className="modal-footer">
