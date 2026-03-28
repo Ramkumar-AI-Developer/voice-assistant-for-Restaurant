@@ -1,13 +1,12 @@
 """
-Restaurant Voice Call Assistant
-────────────────────────────────
+Restaurant Voice Call Assistant — Lite
+────────────────────────────────────────
 Stack:
-  • Twilio          — telephony (inbound calls, TTS, STT fallback)
-  • Groq Whisper    — whisper-large-v3-turbo  (primary STT)
-  • Groq LLM        — llama-3.3-70b-versatile (NLU + response generation)
-  • FastAPI/uvicorn — async HTTP server
+  • Twilio          — telephony (inbound calls, media streams)
+  • OpenAI Realtime — STT + LLM + TTS (gpt-4o-mini-realtime-preview)
+  • FastAPI/uvicorn — async HTTP / WebSocket server
   • PostgreSQL      — persistent storage (menu, orders, call logs)
-  • Twilio WhatsApp — order notifications to cook
+  • Twilio WhatsApp — order notifications to kitchen
 """
 
 import logging
@@ -88,7 +87,7 @@ async def lifespan(app: FastAPI):
 # ── App ───────────────────────────────────────────────────────────────────────
 app = FastAPI(
     title="Restaurant Voice Assistant",
-    description="AI-powered restaurant ordering via phone — Twilio + Groq + PostgreSQL",
+    description="AI-powered restaurant ordering via phone — Twilio + OpenAI Realtime + PostgreSQL",
     version="2.0.0",
     lifespan=lifespan,
 )

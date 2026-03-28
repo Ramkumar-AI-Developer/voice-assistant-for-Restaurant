@@ -55,7 +55,7 @@ def apply_actions(session: CallSession, actions: list[dict]) -> None:
         elif atype == "confirm":
             if session.order_items:
                 session.stage = CallStage.COMPLETED
-                logger.info(f"[{session.call_sid}] Order confirmed — total ${session.order_total:.2f}")
+                logger.info(f"[{session.call_sid}] Order confirmed — total £{session.order_total:.2f}")
             else:
                 logger.warning(f"[{session.call_sid}] Confirm with empty order — ignored")
 
@@ -85,7 +85,7 @@ async def save_order_to_db(session: CallSession, db: AsyncSession) -> int:
     order = Order(
         customer_name=session.customer_name or "Unknown",
         customer_phone=session.phone_number,
-        order_type="pickup",
+        order_type="phone_order",
         status="confirmed",
         total=session.order_total,
         call_sid=session.call_sid,
@@ -109,7 +109,7 @@ async def save_order_to_db(session: CallSession, db: AsyncSession) -> int:
 
     # Send WhatsApp notification to cook
     try:
-        send_order_to_cook(
+        await send_order_to_cook(
             customer_name=session.customer_name or "Unknown",
             customer_phone=session.phone_number,
             order_items=[oi.to_dict() for oi in session.order_items],
@@ -138,6 +138,9 @@ async def save_order_to_db(session: CallSession, db: AsyncSession) -> int:
 
 async def save_call_log(session: CallSession, db: AsyncSession, order_id: int = None) -> None:
     """Persist call log and full transcript to the database."""
+    if getattr(session, 'call_log_saved', False):
+        logger.info(f"[{session.call_sid}] Call log already saved, skipping duplicate")
+        return
     import time
     from sqlalchemy import select
 
@@ -159,7 +162,7 @@ async def save_call_log(session: CallSession, db: AsyncSession, order_id: int = 
     if call_log:
         call_log.customer_name = session.customer_name or "Unknown"
         call_log.status = mapped_status
-        call_log.duration_seconds = int(time.time() - session.created_at)
+        call_log.duration_seconds = int(time.monotonic() - session.created_at)
         call_log.order_id = order_id
     else:
         call_log = CallLog(
@@ -167,7 +170,7 @@ async def save_call_log(session: CallSession, db: AsyncSession, order_id: int = 
             phone_number=session.phone_number,
             customer_name=session.customer_name or "Unknown",
             status=mapped_status,
-            duration_seconds=int(time.time() - session.created_at),
+            duration_seconds=int(time.monotonic() - session.created_at),
             order_id=order_id,
         )
         db.add(call_log)
@@ -186,4 +189,5 @@ async def save_call_log(session: CallSession, db: AsyncSession, order_id: int = 
         db.add(call_msg)
 
     await db.commit()
+    session.call_log_saved = True
     logger.info(f"[{session.call_sid}] Call log saved with {len(session.conversation)} messages")

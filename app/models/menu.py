@@ -116,9 +116,14 @@ def get_menu_text() -> str:
 
 
 def find_menu_item(name: str) -> Optional[MenuItem]:
-    """Case-insensitive substring match on item name."""
+    """Case-insensitive match: exact name first, then substring fallback."""
     menu = get_menu()
-    name_lower = name.lower()
+    name_lower = name.lower().strip()
+    # 1. Exact match
+    for item in menu.values():
+        if item.available and item.name.lower() == name_lower:
+            return item
+    # 2. Substring fallback
     for item in menu.values():
         if item.available and name_lower in item.name.lower():
             return item

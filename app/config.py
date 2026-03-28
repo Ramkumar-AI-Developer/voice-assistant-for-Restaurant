@@ -11,23 +11,16 @@ class Settings(BaseSettings):
     # ── Twilio ────────────────────────────────────────────────────────────────
     TWILIO_ACCOUNT_SID: str
     TWILIO_AUTH_TOKEN: str
-    TWILIO_API_KEY: str
     TWILIO_PHONE_NUMBER: str
 
-    # ── Groq (STT only) ──────────────────────────────────────────────────────
-    GROQ_API_KEY: str
-    GROQ_STT_MODEL: str = "whisper-large-v3"
-    GROQ_LLM_MODEL: str = "llama-3.3-70b-versatile"
 
-    # ── Gemini (LLM) ─────────────────────────────────────────────────────────
-    GEMINI_API_KEY: str
-    GEMINI_MODEL: str = "gemini-2.0-flash"
+    # ── OpenAI Realtime ───────────────────────────────────────────────────────
+    OPENAI_API_KEY: str = ""
 
     # ── App ───────────────────────────────────────────────────────────────────
     BASE_URL: str                          # Public HTTPS URL for Twilio callbacks
     SECRET_KEY: str = "change-me"
     LOG_LEVEL: str = "INFO"
-    OPENAI_API_KEY: str = ""               # OpenAI Realtime API key
 
     # ── Database ──────────────────────────────────────────────────────────────
     DATABASE_URL: str
@@ -56,6 +49,7 @@ class Settings(BaseSettings):
     class Config:
         env_file = ".env"
         env_file_encoding = "utf-8"
+        extra = "ignore"
 
 
 @lru_cache()

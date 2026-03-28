@@ -25,7 +25,7 @@ export default function Sidebar({ user, onLogout }) {
     <aside className="sidebar">
       <div className="sidebar-header">
         <div className="sidebar-logo">
-          <img src="/logo.png" alt="Vasantha Vilas" className="sidebar-logo-img" style={{ width: '40px', height: '40px', borderRadius: '8px' }} />
+          <img src="/favicon.png" alt="Vasantha Vilas" className="sidebar-logo-img" style={{ width: '40px', height: '40px', borderRadius: '8px' }} />
           <div>
             <h1>Vasantha Vilas</h1>
             <p>AI Voice Dashboard</p>

@@ -1,5 +1,6 @@
 """
 Per-call session: conversation history, current order, call stage.
+Used by the OpenAI Realtime API WebSocket handler.
 """
 
 import time
@@ -32,7 +33,7 @@ class CallSession:
     call_sid: str
     phone_number: str
     customer_name: str           = ""       # Collected during call
-    created_at: float            = field(default_factory=time.time)
+    created_at: float            = field(default_factory=time.monotonic)
     last_active: float           = field(default_factory=time.time)
     stage: CallStage             = CallStage.GREETING
     order_items: list[OrderItem] = field(default_factory=list)
@@ -40,6 +41,7 @@ class CallSession:
     silence_count: int           = 0
     error_count: int             = 0
     last_partial: str            = ""
+    call_log_saved: bool         = False
 
     # ── Order helpers ─────────────────────────────────────────────────────────
 
@@ -80,11 +82,7 @@ class CallSession:
         self.conversation.append(Message(role=role, content=content))
         self.last_active = time.time()
 
-    def messages_for_llm(self, system_prompt: str) -> list[dict]:
-        """Build messages list for Groq chat completion (last 20 turns)."""
-        msgs = [{"role": "system", "content": system_prompt}]
-        msgs += [m.to_dict() for m in self.conversation[-20:]]
-        return msgs
+
 
     # ── Serialisation ─────────────────────────────────────────────────────────
 

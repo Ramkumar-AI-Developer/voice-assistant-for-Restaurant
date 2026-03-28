@@ -14,8 +14,10 @@ Features:
 import json
 import asyncio
 import logging
+import base64
 import time
 
+import httpx
 import websockets
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
@@ -284,7 +286,7 @@ async def handle_media_stream(websocket: WebSocket, call_sid: str = None):
                     "voice": "coral",
                     "instructions": instructions,
                     "modalities": ["text", "audio"],
-                    "temperature": 0.8,
+                    "temperature": 0.6,
                     "tools": ORDER_TOOLS,
                     "tool_choice": "auto",
                     "input_audio_transcription": {
@@ -400,7 +402,19 @@ async def handle_media_stream(websocket: WebSocket, call_sid: str = None):
                                 logger.info("Order confirmed + goodbye spoken — hanging up in 7s")
                                 await asyncio.sleep(7)
                                 shutdown_event.set()
-                                # Close Twilio WebSocket to end the call
+                                # Use Twilio REST API to terminate the actual phone call
+                                if call_sid:
+                                    try:
+                                        async with httpx.AsyncClient() as client:
+                                            await client.post(
+                                                f"https://api.twilio.com/2010-04-01/Accounts/{settings.TWILIO_ACCOUNT_SID}/Calls/{call_sid}.json",
+                                                auth=(settings.TWILIO_ACCOUNT_SID, settings.TWILIO_AUTH_TOKEN),
+                                                data={"Status": "completed"},
+                                            )
+                                        logger.info(f"[{call_sid}] Twilio call terminated via REST API")
+                                    except Exception as e:
+                                        logger.warning(f"[{call_sid}] Failed to terminate call via API: {e}")
+                                # Also close the WebSocket stream
                                 try:
                                     await websocket.close()
                                 except Exception:
@@ -513,7 +527,7 @@ async def handle_media_stream(websocket: WebSocket, call_sid: str = None):
             
             await broadcast_dashboard_event("call_ended", {
                 "call_sid": call_sid,
-                "duration": int(time.time() - session.created_at),
+                "duration": int(time.monotonic() - session.created_at),
                 "stage": session.stage.value,
             })
         

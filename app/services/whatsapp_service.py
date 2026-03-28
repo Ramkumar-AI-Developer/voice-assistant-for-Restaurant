@@ -1,7 +1,7 @@
 """
 WhatsApp notification service via Twilio REST API.
 Sends order details to cook when a new order is placed.
-(Using httpx to bypass Windows MAX_PATH limits in the official Twilio SDK)
+(Using httpx async to avoid blocking the event loop)
 """
 
 import logging
@@ -13,14 +13,14 @@ from app.config import settings
 logger = logging.getLogger(__name__)
 
 
-def send_order_to_cook(
+async def send_order_to_cook(
     customer_name: str,
     customer_phone: str,
     order_items: list[dict],
     total: float = 0.0,
 ) -> bool:
     """
-    Send a WhatsApp message to the cook with order details using direct Twilio REST API.
+    Send a WhatsApp message to the cook with order details using async Twilio REST API.
     """
     try:
         # Build order lines
@@ -53,9 +53,8 @@ def send_order_to_cook(
             "Body": message_body,
         }
 
-        # Use sync or async httpx appropriately. Here we'll use sync to drop-in replace
-        with httpx.Client() as client:
-            response = client.post(
+        async with httpx.AsyncClient() as client:
+            response = await client.post(
                 url,
                 data=data,
                 auth=(settings.TWILIO_ACCOUNT_SID, settings.TWILIO_AUTH_TOKEN),

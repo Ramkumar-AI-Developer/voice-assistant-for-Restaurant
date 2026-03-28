@@ -20,8 +20,8 @@ elif database_url.startswith("postgres://"):
 engine = create_async_engine(
     database_url,
     echo=False,
-    pool_size=10,
-    max_overflow=20,
+    pool_size=3,
+    max_overflow=5,
     pool_pre_ping=True,
     pool_recycle=300,
 )
