@@ -1,17 +1,37 @@
 """
-Twilio webhook handlers.
+Twilio webhook handlers — the core conversation loop.
+
 Endpoints:
-  POST /webhook/status — call lifecycle events (completed, failed)
+  POST /webhook/speech          — main speech result handler
+  POST /webhook/partial         — barge-in / in-progress speech (no TwiML response)
+  POST /webhook/confirm         — yes / no order confirmation
+  POST /webhook/speech_fallback — silence / no-input fallback
+  POST /webhook/status          — call lifecycle events (completed, failed, …)
 """
 
 import logging
+
+import httpx
 from fastapi import APIRouter, Form, Request, Depends
 from fastapi.responses import Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.services.session_store import SessionStore
-from app.services.order_service import save_call_log
+from app.services.stt_service import transcribe_audio
+from app.services.llm_service import process_utterance, build_system_prompt
+from app.services.order_service import apply_actions, save_order_to_db, save_call_log
+from app.services.twiml_service import (
+    listen_twiml,
+    silence_twiml,
+    confirm_order_twiml,
+    order_placed_twiml,
+    cancelled_twiml,
+    error_twiml,
+)
+from app.models.menu import get_menu_text
+from app.models.session import CallStage
+from app.config import settings
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -266,3 +286,23 @@ async def call_status(
         await SessionStore.delete(CallSid)
     return Response(status_code=204)
 
+
+# ── Private helpers ───────────────────────────────────────────────────────────
+
+def _wants_confirmation(actions: list[dict]) -> bool:
+    return any(a.get("type") == "confirm" for a in actions)
+
+
+async def _fetch_recording(recording_url: str) -> bytes:
+    """Download Twilio recording audio as raw bytes (wav)."""
+    async with httpx.AsyncClient(timeout=8.0) as client:
+        response = await client.get(
+            recording_url,
+            auth=(settings.TWILIO_ACCOUNT_SID, settings.TWILIO_AUTH_TOKEN),
+            headers={"Accept": "audio/wav"},
+            follow_redirects=True,
+        )
+    if response.status_code == 200:
+        return response.content
+    logger.warning(f"Recording fetch failed: {response.status_code} {recording_url}")
+    return b""

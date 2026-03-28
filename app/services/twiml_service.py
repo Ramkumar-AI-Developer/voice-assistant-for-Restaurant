@@ -1,6 +1,14 @@
 """
 TwiML response builders.
-Minimal set retained for error fallbacks only.
+
+All XML is constructed here so routes stay clean.
+
+Barge-in / interrupt design:
+  • Every <Gather> includes partialResultCallback so Twilio fires a webhook
+    the moment the caller starts speaking — even mid-TTS playback.
+  • actionOnEmptyResult="true" ensures we always get a callback (silence too).
+  • speechModel="phone_call" + enhanced="true" gives highest accuracy on
+    telephony audio.
 """
 
 from xml.etree.ElementTree import Element, SubElement, tostring
@@ -19,6 +27,26 @@ def _say(parent: Element, text: str) -> None:
     el.set("voice", settings.TWILIO_VOICE)
     el.set("language", settings.TWILIO_LANGUAGE)
     el.text = text
+
+
+def _gather(parent: Element, action_path: str) -> Element:
+    g = SubElement(parent, "Gather")
+    g.set("input", "speech")
+    g.set("action", f"{settings.BASE_URL}{action_path}")
+    g.set("method", "POST")
+    g.set("speechTimeout", "0.5")                 # Fast 1s timeout after speech ends
+    g.set("speechModel", "phone_call")
+    g.set("enhanced", "true")
+    g.set("partialResultCallback", f"{settings.BASE_URL}/webhook/partial")
+    g.set("partialResultCallbackMethod", "POST")
+    g.set("actionOnEmptyResult", "true")
+    return g
+
+
+def _redirect(parent: Element, path: str) -> None:
+    el = SubElement(parent, "Redirect")
+    el.set("method", "POST")
+    el.text = f"{settings.BASE_URL}{path}"
 
 
 def _xml(root: Element) -> str:
@@ -87,4 +115,13 @@ def error_twiml(message: str = "Sorry, something went wrong on our end. Please t
     root = _response()
     _say(root, message)
     SubElement(root, "Hangup")
+    return _xml(root)
+
+
+def silence_twiml(prompt: str) -> str:
+    """Re-prompt after silence without an additional assistant message."""
+    root = _response()
+    gather = _gather(root, "/webhook/speech")
+    _say(gather, prompt)
+    _redirect(root, "/webhook/speech")
     return _xml(root)
