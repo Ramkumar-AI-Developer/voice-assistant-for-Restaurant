@@ -485,6 +485,14 @@ body {
   color: var(--text-primary);
 }
 
+.data-table tbody tr.row-selected {
+  background: var(--bg-hover);
+}
+
+.data-table tbody tr.row-selected td {
+  color: var(--text-primary);
+}
+
 /* ── Badges ───────────────────────────────────────────────────────────────── */
 
 .badge {
