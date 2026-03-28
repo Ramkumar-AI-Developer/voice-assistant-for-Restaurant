@@ -124,7 +124,7 @@ async def speech_result(
         logger.info(
             f"[{CallSid}] stage={session.stage.value} "
             f"items={len(session.order_items)} "
-            f"total=${session.order_total:.2f} "
+            f"total=£{session.order_total:.2f} "
             f"llm_latency={result.get('latency', 0):.2f}s"
         )
 

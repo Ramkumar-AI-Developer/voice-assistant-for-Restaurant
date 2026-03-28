@@ -96,7 +96,7 @@ def order_placed_twiml(total: float) -> str:
     """Thank the caller, state total, hang up."""
     root = _response()
     _say(root, (
-        f"Perfect! Your order has been placed and your total is ${total:.2f}. "
+        f"Perfect! Your order has been placed and your total is £{total:.2f}. "
         "We will have it ready for you shortly. "
         "Thank you for calling Vasantha Vilas. Goodbye!"
     ))
