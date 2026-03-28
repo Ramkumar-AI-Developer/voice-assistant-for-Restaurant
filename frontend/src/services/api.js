@@ -42,6 +42,7 @@ export const menuAPI = {
   create: (data) => api.post('/api/menu/', data),
   update: (id, data) => api.put(`/api/menu/${id}`, data),
   delete: (id) => api.delete(`/api/menu/${id}`),
+  bulkDelete: (ids) => api.post('/api/menu/bulk-delete', { ids }),
   upload: (file) => {
     const fd = new FormData();
     fd.append('file', file);

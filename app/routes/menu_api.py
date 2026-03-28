@@ -48,6 +48,9 @@ class MenuItemUpdate(BaseModel):
     available: Optional[bool] = None
     customisations: Optional[list[str]] = None
 
+class BulkDeleteRequest(BaseModel):
+    ids: list[int]
+
 class MenuItemResponse(BaseModel):
     id: int
     name: str
@@ -188,6 +191,30 @@ async def delete_menu_item(
     await load_menu_from_db(db)
 
     return {"message": f"Menu item '{item.name}' deleted"}
+
+
+@router.post("/bulk-delete")
+async def bulk_delete_menu_items(
+    body: BulkDeleteRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Delete multiple menu items."""
+    if not body.ids:
+        return {"message": "No items to delete", "deleted": 0}
+
+    # Delete items that match the IDs
+    from sqlalchemy import delete
+    result = await db.execute(
+        delete(MenuItemDB).where(MenuItemDB.id.in_(body.ids))
+    )
+    deleted_count = result.rowcount
+    await db.commit()
+
+    # Reload menu cache
+    await load_menu_from_db(db)
+
+    return {"message": f"Deleted {deleted_count} menu items", "deleted": deleted_count}
 
 
 @router.post("/upload")

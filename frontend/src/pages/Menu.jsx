@@ -8,6 +8,7 @@ export default function Menu() {
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
   const [editItem, setEditItem] = useState(null);
+  const [selectedIds, setSelectedIds] = useState([]);
   const fileRef = useRef(null);
 
   // Form state
@@ -78,9 +79,40 @@ export default function Menu() {
     try {
       await menuAPI.delete(id);
       toast.success('Item deleted');
+      setSelectedIds(prev => prev.filter(i => i !== id));
       loadMenu();
     } catch (err) {
       toast.error('Failed to delete');
+    }
+  };
+
+  const handleBulkDelete = async () => {
+    if (selectedIds.length === 0) return;
+    if (!confirm(`Delete ${selectedIds.length} items?`)) return;
+    try {
+      await menuAPI.bulkDelete(selectedIds);
+      toast.success(`Deleted ${selectedIds.length} items`);
+      setSelectedIds([]);
+      loadMenu();
+    } catch (err) {
+      toast.error('Bulk delete failed');
+    }
+  };
+
+  const toggleSelect = (id) => {
+    setSelectedIds(prev =>
+      prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id]
+    );
+  };
+
+  const toggleSelectAll = (catItems) => {
+    const catIds = catItems.map(i => i.id);
+    const allSelected = catIds.every(id => selectedIds.includes(id));
+
+    if (allSelected) {
+      setSelectedIds(prev => prev.filter(id => !catIds.includes(id)));
+    } else {
+      setSelectedIds(prev => [...new Set([...prev, ...catIds])]);
     }
   };
 
@@ -125,6 +157,11 @@ export default function Menu() {
         <h1>Menu Management</h1>
         <p>Add, edit, or upload menu items for your AI voice assistant</p>
         <div className="page-actions">
+          {selectedIds.length > 0 && (
+            <button className="btn btn-danger" onClick={handleBulkDelete}>
+              <HiOutlineTrash /> Delete Selected ({selectedIds.length})
+            </button>
+          )}
           <button className="btn btn-primary" onClick={openAdd}><HiOutlinePlus /> Add Item</button>
           <button className="btn btn-secondary" onClick={() => fileRef.current?.click()}><HiOutlineUpload /> Upload CSV/Excel</button>
           <button className="btn btn-secondary" onClick={handleDownloadTemplate}><HiOutlineDownload /> Download Template</button>
@@ -150,6 +187,13 @@ export default function Menu() {
               <table className="data-table">
                 <thead>
                   <tr>
+                    <th style={{ width: 40 }}>
+                      <input
+                        type="checkbox"
+                        checked={catItems.every(i => selectedIds.includes(i.id))}
+                        onChange={() => toggleSelectAll(catItems)}
+                      />
+                    </th>
                     <th>Name</th>
                     <th>Price</th>
                     <th>Description</th>
@@ -160,9 +204,17 @@ export default function Menu() {
                 </thead>
                 <tbody>
                   {catItems.map((item) => (
-                    <tr key={item.id}>
+                    <tr key={item.id} className={selectedIds.includes(item.id) ? 'row-selected' : ''}>
+                      <td>
+                        <input
+                          type="checkbox"
+                          checked={selectedIds.includes(item.id)}
+                          onChange={() => toggleSelect(item.id)}
+                          onClick={(e) => e.stopPropagation()}
+                        />
+                      </td>
                       <td style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{item.name}</td>
-                      <td style={{ fontWeight: 600, color: 'var(--success)' }}>${item.price?.toFixed(2)}</td>
+                      <td style={{ fontWeight: 600, color: 'var(--success)' }}>£{item.price?.toFixed(2)}</td>
                       <td style={{ maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis' }}>{item.description}</td>
                       <td>
                         <span className={`badge ${item.available ? 'badge-success' : 'badge-danger'}`}>
