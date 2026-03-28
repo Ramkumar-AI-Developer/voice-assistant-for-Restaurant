@@ -52,20 +52,16 @@ async def inbound_call(
         # Create session mapping (no longer pre-fetching name, so it asks every time)
         session = await SessionStore.create(call_sid=CallSid, phone_number=From)
 
-        # Create initial call log entry in DB
-        from sqlalchemy import select
+        # Create initial call log entry in DB (upsert to handle Twilio duplicate retries)
+        from sqlalchemy.dialects.postgresql import insert as pg_insert
         try:
-            result = await db.execute(select(CallLog).where(CallLog.call_sid == CallSid))
-            existing_log = result.scalar_one_or_none()
-            
-            if not existing_log:
-                call_log = CallLog(
-                    call_sid=CallSid,
-                    phone_number=From,
-                    status="in_progress",
-                )
-                db.add(call_log)
-                await db.commit()
+            stmt = pg_insert(CallLog).values(
+                call_sid=CallSid,
+                phone_number=From,
+                status="in_progress",
+            ).on_conflict_do_nothing(index_elements=["call_sid"])
+            await db.execute(stmt)
+            await db.commit()
         except Exception as exc:
             await db.rollback()
             logger.error(f"Failed to create call log: {exc}")
