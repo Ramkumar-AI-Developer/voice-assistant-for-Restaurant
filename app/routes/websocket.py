@@ -102,38 +102,51 @@ ORDER_TOOLS = [
     },
 ]
 
-SYSTEM_MESSAGE = """You are Aria, an elegant, polite, and gentle voice assistant for Vasantha Vilas restaurant.
+SYSTEM_MESSAGE = """You are Aria, a warm, friendly voice assistant for Vasantha Vilas restaurant.
 Your job is to help callers place food orders over the phone.
 
-RESTAURANT DETAILS:
+RESTAURANT DETAILS (FIXED — never invent different addresses):
 - Name: Vasantha Vilas — Indian Vegetarian Restaurant (Since 2005)
-- Address: 306 High Street, Slough SL1 1NB (Only for Slough location)
+- Address: 306 High Street, Slough SL1 1NB
+- IMPORTANT: The ONLY address is 306 High Street, Slough SL1 1NB. Do NOT make up or guess any other address. If asked about location, always say exactly: "We are at 306 High Street, Slough, S L 1, 1 N B."
 - Email: hello@vasanthavilas.co.uk
-- Phone: 01753 251030
+- Phone: 01252 438046
 - Website: https://vasanthavilas.co.uk/
 - Opening Hours:
     Monday–Thursday: 10:00 AM – 10:00 PM
     Friday: 10:00 AM – 10:30 PM
     Saturday–Sunday: 9:00 AM – 10:30 PM
-- Allergen notice: Nuts, sesame and other allergenic ingredients are used in our kitchen. We cannot guarantee our food is free from traces of allergens.
+- Allergen notice: Nuts, sesame and other allergenic ingredients are used in our kitchen.
 
 ABOUT THE RESTAURANT:
-Your gateway to the exquisite world of Authentic Indian Vegetarian Cuisine.
-Since 2005, Vasantha Vilas has been a cornerstone of East Ham’s culinary scene, delighting customers with the finest vegetarian cuisine. Formerly known as Vasanta Vilas, we proudly pioneered the introduction of authentic South Indian flavors to London.
-Our unwavering commitment to quality and flavor has made us a cherished destination for visitors from Leicester, Manchester, and Birmingham. At Vasantha Vilas, guests are drawn by the irresistible aroma and the heartfelt warmth of our hospitality.
-Under the visionary leadership of Mr. Kannan Murugan and Mr. Mohamed Thasleem, we’ve embarked on an exciting journey to redefine the dining experience. Vasantha Vilas now combines modern elegance with the timeless essence of South Indian culinary heritage.
+Since 2005, Vasantha Vilas has been a cornerstone of culinary scene, delighting customers with authentic South Indian vegetarian cuisine. We proudly pioneered the introduction of authentic South Indian flavors to London. Under the leadership of Mr. Kannan Murugan and Mr. Mohamed Thasleem, we combine modern elegance with timeless South Indian culinary heritage.
 
-RULES:
-- When the call starts, your VERY FIRST MESSAGE must ALWAYS be in English. Never start in Spanish. After the greeting, you can freely switch to Hindi if the caller speaks Hindi.
-- Keep every reply short and natural — this is a phone call, not a chat.
-- If you hear silence, background static, or unclear noise, DO NOT guess or hallucinate an order. Simply say "Hello, are you still there?"
-- If speaking English, use a British (UK) accent. Be casual, conversational, and human-like. Use filler words (like "hmm", "let me see", "yeah", "accha", "thik hai").
-- When asked to add an item, you can quickly say "Got it, adding that now" while you trigger the add_to_order tool, so there is no awkward silence.
-- Use get_order_summary to read back the order when asked.
-- When the caller is done ordering, politely ask for their NAME for the order, then use set_customer_info. ONLY set the name if you clearly heard it. If unsurse, ask them to repeat or spell it. 
-- Then read back the full order and ask for final confirmation.
-- When they confirm, use confirm_order to finalize, and immediately say your goodbye thank you message.
-- The caller's phone number is automatically captured — do NOT ask for it.
+CRITICAL RULES:
+1. LANGUAGE:
+   - Your VERY FIRST message must ALWAYS be in English. Never start in any other language.
+   - If the caller speaks Hindi or switches to Hindi, you MUST continue the ENTIRE rest of the conversation in Hindi. Do not switch back to English unless the caller does. Keep taking the order, confirming, and saying goodbye all in Hindi.
+   - If speaking English, use a natural British accent. Be warm, casual, and conversational.
+
+2. VOICE & TONE:
+   - Speak like a real human on the phone. Use natural fillers: "right", "lovely", "brilliant", "sure thing", "no worries".
+   - Keep every reply SHORT — 1-2 sentences max. This is a phone call, not a lecture.
+   - Pause naturally between sentences. Don't rush.
+
+3. SILENCE & NOISE HANDLING (VERY IMPORTANT):
+   - If you hear silence, "mmm", "hmm", background noise, static, or any unclear sound:
+     → Do NOT interpret it as an order or a cancellation.
+     → Do NOT remove items from the order.
+     → Do NOT call any tools.
+     → Simply say "Hello, are you still there?" or "Sorry, I didn't catch that."
+   - NEVER clear or modify the order based on unclear audio.
+
+4. ORDER FLOW:
+   - When adding items, say "Got it, adding that now" while calling add_to_order.
+   - Use get_order_summary to read back the order when asked.
+   - When done ordering, ask for their NAME, then use set_customer_info. If unsure, ask them to repeat or spell it.
+   - Read back the full order, then ask for confirmation.
+   - When confirmed, use confirm_order and say a warm goodbye with the total.
+   - The phone number is captured automatically — do NOT ask for it.
 
 MENU:
 {menu}
@@ -277,16 +290,17 @@ async def handle_media_stream(websocket: WebSocket, call_sid: str = None):
                 "session": {
                     "turn_detection": {
                         "type": "server_vad",
-                        "threshold": 0.8,
+                        "threshold": 0.9,
                         "prefix_padding_ms": 300,
-                        "silence_duration_ms": 1000,
+                        "silence_duration_ms": 1200,
                     },
                     "input_audio_format": "g711_ulaw",
                     "output_audio_format": "g711_ulaw",
-                    "voice": "coral",
+                    "voice": "ash",
                     "instructions": instructions,
                     "modalities": ["text", "audio"],
                     "temperature": 0.6,
+                    "max_response_output_tokens": 500,
                     "tools": ORDER_TOOLS,
                     "tool_choice": "auto",
                     "input_audio_transcription": {
@@ -333,11 +347,28 @@ async def handle_media_stream(websocket: WebSocket, call_sid: str = None):
                             })
                             
                             # Trigger greeting ONLY AFTER Twilio stream is ready
+                            # Use UK timezone for time-appropriate greeting
+                            from datetime import datetime, timezone, timedelta
+                            uk_now = datetime.now(timezone.utc)
+                            # Approximate BST: UTC+1 from last Sunday of March to last Sunday of October
+                            uk_month = uk_now.month
+                            if 4 <= uk_month <= 10:  # BST (approximate)
+                                uk_hour = (uk_now.hour + 1) % 24
+                            else:  # GMT
+                                uk_hour = uk_now.hour
+                            
+                            if uk_hour < 12:
+                                time_greeting = "Good morning"
+                            elif uk_hour < 17:
+                                time_greeting = "Good afternoon"
+                            else:
+                                time_greeting = "Good evening"
+                            
                             await openai_ws.send(json.dumps({
                                 "type": "response.create",
                                 "response": {
                                     "modalities": ["text", "audio"],
-                                    "instructions": "Greet the caller warmly and ask what they would like to order today. Keep it under 20 words.",
+                                    "instructions": f"Say exactly: '{time_greeting}! Thank you for calling Vasantha Vilas. What can I get for you today?' — keep it warm and brief, under 20 words. Speak in English.",
                                 }
                             }))
 
@@ -362,6 +393,8 @@ async def handle_media_stream(websocket: WebSocket, call_sid: str = None):
             async def openai_to_twilio():
                 nonlocal stream_sid, session, order_confirmed
                 audio_chunks_sent = 0
+                turn_count = 0
+                conversation_item_ids: list[str] = []  # Track item IDs for truncation
                 
                 # Track pending function calls
                 pending_fn_calls: dict[str, dict] = {}  # call_id → {name, args_buffer}
@@ -399,8 +432,8 @@ async def handle_media_stream(websocket: WebSocket, call_sid: str = None):
                             
                             # Auto-hangup after order confirmation goodbye
                             if order_confirmed:
-                                logger.info("Order confirmed + goodbye spoken — hanging up in 7s")
-                                await asyncio.sleep(7)
+                                logger.info("Order confirmed + goodbye spoken — hanging up in 4s")
+                                await asyncio.sleep(4)
                                 shutdown_event.set()
                                 # Use Twilio REST API to terminate the actual phone call
                                 if call_sid:
@@ -480,7 +513,10 @@ async def handle_media_stream(websocket: WebSocket, call_sid: str = None):
 
                         elif event_type == "conversation.item.input_audio_transcription.completed":
                             transcript = response.get("transcript", "")
+                            item_id = response.get("item_id", "")
                             logger.info(f"👤 User: {transcript[:120]}")
+                            if item_id:
+                                conversation_item_ids.append(item_id)
                             if session:
                                 session.add_message("user", transcript)
 
@@ -494,6 +530,54 @@ async def handle_media_stream(websocket: WebSocket, call_sid: str = None):
                             usage = response.get("response", {}).get("usage", {})
                             if usage:
                                 logger.info(f"Tokens: in={usage.get('input_tokens', 0)} out={usage.get('output_tokens', 0)}")
+                            
+                            # Track conversation turns and truncate old ones to prevent context overflow
+                            turn_count += 1
+                            # Collect output item IDs
+                            for item in response.get("response", {}).get("output", []):
+                                item_id = item.get("id")
+                                if item_id:
+                                    conversation_item_ids.append(item_id)
+                            
+                            # After 10 turns, prune old items to keep context lean
+                            MAX_CONTEXT_ITEMS = 20  # Keep last 20 conversation items
+                            if len(conversation_item_ids) > MAX_CONTEXT_ITEMS:
+                                items_to_remove = conversation_item_ids[:-MAX_CONTEXT_ITEMS]
+                                for old_id in items_to_remove:
+                                    try:
+                                        await openai_ws.send(json.dumps({
+                                            "type": "conversation.item.delete",
+                                            "item_id": old_id,
+                                        }))
+                                    except Exception:
+                                        pass
+                                conversation_item_ids = conversation_item_ids[-MAX_CONTEXT_ITEMS:]
+                                logger.info(f"Pruned {len(items_to_remove)} old conversation items (turn {turn_count})")
+                                
+                                # Inject current order state so AI remembers what's been ordered
+                                if session and session.order_items:
+                                    items_list = ", ".join(
+                                        f"{oi.quantity}x {oi.menu_item.name}" for oi in session.order_items
+                                    )
+                                    state_summary = (
+                                        f"[SYSTEM CONTEXT REMINDER] "
+                                        f"Current order so far: {items_list}. "
+                                        f"Total: £{session.order_total:.2f}. "
+                                        f"Customer name: {session.customer_name or 'not yet provided'}. "
+                                        f"Do NOT ask for items already in the order again."
+                                    )
+                                    await openai_ws.send(json.dumps({
+                                        "type": "conversation.item.create",
+                                        "item": {
+                                            "type": "message",
+                                            "role": "user",
+                                            "content": [{
+                                                "type": "input_text",
+                                                "text": state_summary,
+                                            }],
+                                        }
+                                    }))
+                                    logger.info(f"Injected order state reminder: {items_list}")
 
                         # ── Errors ────────────────────────────────────
                         elif event_type == "error":
