@@ -368,10 +368,40 @@ async def handle_media_stream(websocket: WebSocket, call_sid: str = None):
                             })
                             
                             # Trigger greeting ONLY AFTER Twilio stream is ready
-                            greeting_text = (
-                                "Hello! Thank you ever so much for calling Vasantha Vilas. "
-                                "Lovely to have you on the line — what can I get for you today?"
-                            )
+                            # Use UK timezone for time-appropriate greeting
+                            from datetime import datetime, timezone, timedelta
+                            uk_now = datetime.now(timezone.utc)
+                            # Approximate BST: UTC+1 from last Sunday of March to last Sunday of October
+                            uk_month = uk_now.month
+                            if 4 <= uk_month <= 10:  # BST (approximate)
+                                uk_hour = (uk_now.hour + 1) % 24
+                            else:  # GMT
+                                uk_hour = uk_now.hour
+                            
+                            if uk_hour < 12:
+                                time_greeting = "Good morning"
+                            elif uk_hour < 17:
+                                time_greeting = "Good afternoon"
+                            else:
+                                time_greeting = "Good evening"
+                            
+                            # Build a warm, polite UK-style greeting based on time of day
+                            if uk_hour < 12:
+                                greeting_text = (
+                                    f"{time_greeting}! Thank you ever so much for calling Vasantha Vilas. "
+                                    f"How lovely to hear from you — what can I get for you today?"
+                                )
+                            elif uk_hour < 17:
+                                greeting_text = (
+                                    f"{time_greeting}! Thanks ever so much for ringing Vasantha Vilas. "
+                                    f"Lovely to have you on the line — what can I help you with today?"
+                                )
+                            else:
+                                greeting_text = (
+                                    f"{time_greeting}! Thank you so much for calling Vasantha Vilas. "
+                                    f"How wonderful to hear from you — what can I get for you this evening?"
+                                )
+                            
                             await openai_ws.send(json.dumps({
                                 "type": "response.create",
                                 "response": {
