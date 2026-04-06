@@ -100,6 +100,12 @@ ORDER_TOOLS = [
         "description": "Finalize and confirm the customer's order. Call this ONLY when the customer explicitly confirms. This saves the order and notifies the kitchen.",
         "parameters": {"type": "object", "properties": {}},
     },
+    {
+        "type": "function",
+        "name": "cancel_order",
+        "description": "Cancel the entire order and end the call. Call this ONLY when the customer explicitly says they want to cancel everything or hung up without ordering.",
+        "parameters": {"type": "object", "properties": {}},
+    },
 ]
 
 SYSTEM_MESSAGE = """You are Aria, an exceptionally polite, warm, and charming voice assistant for Vasantha Vilas restaurant.
@@ -142,10 +148,12 @@ CRITICAL RULES:
    - Use "sorry" politely when needed: "So sorry about that", "Apologies, let me sort that out for you"
 
 3. VOICE & TONE:
+   - Act exactly like a real human. Do NOT sound robotic, scripted, or overly formal.
+   - Use natural conversational fillers appropriately (e.g., "umm", "let me see", "ah", "hmm").
+   - Mimic slight pauses as if you are typing or looking at a menu ("let me just pop that in...", "bear with me a second").
    - Speak like a genuinely kind, warm British person on the phone.
    - Sound like you're smiling — be cheerful, patient, and never rushed.
-   - Keep every reply SHORT — 1-2 sentences max. This is a phone call, not a lecture.
-   - Pause naturally between sentences. Never rush the caller.
+   - Keep every reply VERY SHORT — 1-2 sentences max. This is a phone call, not a lecture.
    - Make the caller feel welcomed, valued, and looked after.
 
 4. SILENCE & NOISE HANDLING (VERY IMPORTANT):
@@ -266,6 +274,19 @@ async def execute_tool(name: str, args: dict, session: CallSession) -> str:
             "message": f"Order confirmed! Total: £{session.order_total:.2f}. The kitchen has been notified. Thank the customer politely and say goodbye.",
         })
     
+    elif name == "cancel_order":
+        session.stage = CallStage.COMPLETED
+        logger.info(f"[{session.call_sid}] Order cancelled by customer")
+        
+        await broadcast_dashboard_event("order_cancelled", {
+            "call_sid": session.call_sid,
+        })
+        
+        return json.dumps({
+            "success": True,
+            "message": "Order has been cancelled completely. Please apologize politely and say a warm goodbye.",
+        })
+    
     return json.dumps({"error": f"Unknown tool: {name}"})
 
 
@@ -280,6 +301,7 @@ async def handle_media_stream(websocket: WebSocket, call_sid: str = None):
     stream_sid = None
     session = None
     order_confirmed = False
+    order_cancelled = False
     shutdown_event = asyncio.Event()  # Signal both loops to stop
     
     # Pre-fetch session if call_sid was provided in the URL
@@ -429,7 +451,7 @@ async def handle_media_stream(websocket: WebSocket, call_sid: str = None):
 
             # ── OpenAI → Twilio ───────────────────────────────────────────
             async def openai_to_twilio():
-                nonlocal stream_sid, session, order_confirmed
+                nonlocal stream_sid, session, order_confirmed, order_cancelled
                 audio_chunks_sent = 0
                 turn_count = 0
                 conversation_item_ids: list[str] = []  # Track item IDs for truncation
@@ -470,9 +492,9 @@ async def handle_media_stream(websocket: WebSocket, call_sid: str = None):
                             logger.info(f"Audio done ({audio_chunks_sent} chunks)")
                             audio_chunks_sent = 0
                             
-                            # Auto-hangup after order confirmation goodbye
-                            if order_confirmed:
-                                logger.info("Order confirmed + goodbye spoken — hanging up in 4s")
+                            # Auto-hangup after order confirmation or cancellation goodbye
+                            if order_confirmed or order_cancelled:
+                                logger.info("Call finished/cancelled + goodbye spoken — hanging up in 4s")
                                 await asyncio.sleep(4)
                                 shutdown_event.set()
                                 # Use Twilio REST API to terminate the actual phone call
@@ -525,9 +547,11 @@ async def handle_media_stream(websocket: WebSocket, call_sid: str = None):
                                 result = await execute_tool(fn_name, fn_args, session)
                                 logger.info(f"Tool result: {result[:100]}")
                                 
-                                # Track if order was confirmed
+                                # Track if order was confirmed or cancelled
                                 if fn_name == "confirm_order" and '"success": true' in result.lower():
                                     order_confirmed = True
+                                elif fn_name == "cancel_order" and '"success": true' in result.lower():
+                                    order_cancelled = True
                                 
                                 # Send function output back to OpenAI
                                 await openai_ws.send(json.dumps({
