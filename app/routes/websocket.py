@@ -103,7 +103,7 @@ ORDER_TOOLS = [
     {
         "type": "function",
         "name": "cancel_order",
-        "description": "Cancel the entire order and end the call. Call this ONLY when the customer explicitly says they want to cancel everything or hung up without ordering.",
+        "description": "Cancel the entire order and end the call. You MUST call this whenever the customer says they don't want to order, changes their mind and wants to leave, or says goodbye without ordering.",
         "parameters": {"type": "object", "properties": {}},
     },
 ]
@@ -170,6 +170,7 @@ CRITICAL RULES:
    - When done ordering, politely ask for their name: "Could I take your name, please?" then use set_customer_info. If unsure, say "So sorry, could you spell that out for me, please?"
    - Read back the full order, then ask for confirmation: "Just to make sure I've got everything right for you..."
    - When confirmed, use confirm_order and give a warm, polite goodbye: "Brilliant, that's all sorted! Your total comes to £X. We'll have that ready for you shortly. Thank you ever so much for calling Vasantha Vilas — we really appreciate it. Cheers, have a lovely day!"
+   - If the customer decides NOT to order anything, or just says goodbye without ordering, you MUST use the `cancel_order` tool so the phone line can be disconnected.
    - The phone number is captured automatically — do NOT ask for it.
 
 6. FAREWELL POLITENESS:
@@ -646,7 +647,12 @@ async def handle_media_stream(websocket: WebSocket, call_sid: str = None):
                         # ── Errors ────────────────────────────────────
                         elif event_type == "error":
                             error_info = response.get("error", {})
-                            logger.error(f"OpenAI error: {error_info.get('message', response)}")
+                            error_message = error_info.get("message", str(response))
+                            if "Cancellation failed" in error_message or "no active response found" in error_message:
+                                # Harmless error caused by natural barge-in timing
+                                pass
+                            else:
+                                logger.error(f"OpenAI error: {error_message}")
 
                 except WebSocketDisconnect:
                     logger.info("Twilio WebSocket disconnected (caller hung up)")
