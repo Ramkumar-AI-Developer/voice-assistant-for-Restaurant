@@ -317,7 +317,7 @@ async def handle_media_stream(websocket: WebSocket, call_sid: str = None):
                     },
                     "input_audio_format": "g711_ulaw",
                     "output_audio_format": "g711_ulaw",
-                    "voice": "ash",
+                    "voice": "shimmer",
                     "instructions": instructions,
                     "modalities": ["text", "audio"],
                     "temperature": 0.6,
@@ -406,7 +406,7 @@ async def handle_media_stream(websocket: WebSocket, call_sid: str = None):
                                 "type": "response.create",
                                 "response": {
                                     "modalities": ["text", "audio"],
-                                    "instructions": f"Say exactly: '{greeting_text}' — keep it warm, polite, and genuine. Speak in English with a warm British tone. Sound like you're smiling.",
+                                    "instructions": f"Say exactly: '{greeting_text}' — keep it extremely gentle, polite, and warmly hospitable. Speak with a soothing British accent and sound like you're smiling.",
                                 }
                             }))
 
@@ -455,12 +455,14 @@ async def handle_media_stream(websocket: WebSocket, call_sid: str = None):
 
                         # ── User interruption (barge-in) ──────────────
                         elif event_type == "input_audio_buffer.speech_started":
-                            logger.info("User interruption — clearing buffer")
+                            logger.info("User interruption — clearing buffer and cancelling generation")
                             if stream_sid:
                                 await websocket.send_json({
                                     "event": "clear",
                                     "streamSid": stream_sid,
                                 })
+                                # Tell OpenAI to stop generating audio for the current response
+                                await openai_ws.send(json.dumps({"type": "response.cancel"}))
                             audio_chunks_sent = 0
 
                         # ── Audio done ────────────────────────────────

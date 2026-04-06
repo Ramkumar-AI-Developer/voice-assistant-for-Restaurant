@@ -35,8 +35,8 @@ class Settings(BaseSettings):
     DEFAULT_ADMIN_PASSWORD: str = "admin123"
 
     # ── Twilio TTS ────────────────────────────────────────────────────────────
-    TWILIO_VOICE: str = "Google.en-US-Journey-F"
-    TWILIO_LANGUAGE: str = "en-US"
+    TWILIO_VOICE: str = "Google.en-GB-Neural2-A"
+    TWILIO_LANGUAGE: str = "en-GB"
 
     # ── WhatsApp ──────────────────────────────────────────────────────────────
     TWILIO_WHATSAPP_FROM: str = "whatsapp:+14155238886"
