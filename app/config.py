@@ -40,7 +40,7 @@ class Settings(BaseSettings):
 
     # ── WhatsApp ──────────────────────────────────────────────────────────────
     TWILIO_WHATSAPP_FROM: str = "whatsapp:+14155238886"
-    COOK_WHATSAPP_NUMBER: str = "whatsapp:+917708504240"
+    COOK_WHATSAPP_NUMBER: str = "whatsapp:+918903453458"
 
     # ── Session ───────────────────────────────────────────────────────────────
     SESSION_TTL_SECONDS: int = 1800        # 30 min
