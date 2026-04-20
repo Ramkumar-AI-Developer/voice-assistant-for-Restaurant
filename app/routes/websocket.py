@@ -169,8 +169,8 @@ CRITICAL RULES:
    - Use get_order_summary to read back the order when asked.
    - When done ordering, politely ask for their name: "Could I take your name, please?" then use set_customer_info. If unsure, say "So sorry, could you spell that out for me, please?"
    - Read back the full order, then ask for confirmation: "Just to make sure I've got everything right for you..."
-   - When confirmed, use confirm_order and give a warm, polite goodbye: "Brilliant, that's all sorted! Your total comes to £X. We'll have that ready for you shortly. Thank you ever so much for calling Vasantha Vilas — we really appreciate it. Cheers, have a lovely day!"
-   - CRITICAL HANGUP RULE: If the customer decides NOT to order anything, or just says goodbye without ordering, you MUST use the `cancel_order` function call to physically disconnect the line. Do not just say goodbye in audio—you must invoke the `cancel_order` tool!
+   - When confirmed, you ABSOLUTELY MUST use the `confirm_order` function tool to finalize the order in the system. YOU CANNOT JUST SAY the order is confirmed in audio—you MUST strictly invoke the `confirm_order` tool. Wait for the tool's success response before saying your exact warm goodbye ("Brilliant, that's all sorted...").
+   - CRITICAL HANGUP RULE: If the customer decides NOT to order anything, or just says goodbye without ordering, you MUST use the `cancel_order` function tool to physically disconnect the line. Do not just say goodbye in audio—you must invoke the `cancel_order` tool!
    - The phone number is captured automatically — do NOT ask for it.
 
 6. FAREWELL POLITENESS:
@@ -670,8 +670,24 @@ async def handle_media_stream(websocket: WebSocket, call_sid: str = None):
     except Exception as e:
         logger.error(f"WebSocket handler error: {e}", exc_info=True)
     finally:
-        # Save call log on disconnect
+        # Save order and call log on disconnect
         if session and call_sid:
+            # 1. Fallback Order Rescue
+            # If the user hangs up abruptly but the bot verbally confirmed the order, save it!
+            if session.order_items and not order_confirmed and not order_cancelled:
+                assistant_msgs = " ".join([m.content.lower() for m in session.conversation if m.role == "assistant"])
+                confirmation_keywords = ["sorted!", "total comes to", "kitchen", "shortly", "have that ready", "order is confirmed"]
+                if any(kw in assistant_msgs for kw in confirmation_keywords):
+                    try:
+                        from app.services.order_service import save_order_to_db
+                        async with AsyncSessionLocal() as db:
+                            order_id = await save_order_to_db(session, db)
+                            logger.info(f"[{call_sid}] Auto-saved abandoned order #{order_id} because bot verbally confirmed it before hangup")
+                            order_confirmed = True
+                    except Exception as exc:
+                        logger.error(f"[{call_sid}] Failed to auto-save abandoned order: {exc}")
+
+            # 2. Save Call Log
             try:
                 from app.services.order_service import save_call_log
                 async with AsyncSessionLocal() as db:
