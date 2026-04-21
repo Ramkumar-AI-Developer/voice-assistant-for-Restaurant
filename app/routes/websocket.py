@@ -434,10 +434,13 @@ async def handle_media_stream(websocket: WebSocket, call_sid: str = None):
                             }))
 
                         elif event == "media":
-                            await openai_ws.send(json.dumps({
-                                "type": "input_audio_buffer.append",
-                                "audio": data["media"]["payload"],
-                            }))
+                            # Stop forwarding caller audio after order confirmed/cancelled
+                            # so the user cannot trigger interruptions during goodbye
+                            if not (order_confirmed or order_cancelled):
+                                await openai_ws.send(json.dumps({
+                                    "type": "input_audio_buffer.append",
+                                    "audio": data["media"]["payload"],
+                                }))
 
                         elif event == "stop":
                             logger.info("Twilio stream stopped")
@@ -478,15 +481,19 @@ async def handle_media_stream(websocket: WebSocket, call_sid: str = None):
 
                         # ── User interruption (barge-in) ──────────────
                         elif event_type == "input_audio_buffer.speech_started":
-                            logger.info("User interruption — clearing buffer and cancelling generation")
-                            if stream_sid:
-                                await websocket.send_json({
-                                    "event": "clear",
-                                    "streamSid": stream_sid,
-                                })
-                                # Tell OpenAI to stop generating audio for the current response
-                                await openai_ws.send(json.dumps({"type": "response.cancel"}))
-                            audio_chunks_sent = 0
+                            # Don't allow interruptions during goodbye after order confirmation
+                            if order_confirmed or order_cancelled:
+                                logger.info("Ignoring user interruption during goodbye")
+                            else:
+                                logger.info("User interruption — clearing buffer and cancelling generation")
+                                if stream_sid:
+                                    await websocket.send_json({
+                                        "event": "clear",
+                                        "streamSid": stream_sid,
+                                    })
+                                    # Tell OpenAI to stop generating audio for the current response
+                                    await openai_ws.send(json.dumps({"type": "response.cancel"}))
+                                audio_chunks_sent = 0
 
                         # ── Audio done ────────────────────────────────
                         elif event_type == "response.audio.done":
@@ -495,8 +502,8 @@ async def handle_media_stream(websocket: WebSocket, call_sid: str = None):
                             
                             # Auto-hangup after order confirmation or cancellation goodbye
                             if order_confirmed or order_cancelled:
-                                logger.info("Call finished/cancelled + goodbye spoken — hanging up in 4s")
-                                await asyncio.sleep(4)
+                                logger.info("Call finished/cancelled + goodbye spoken — hanging up in 8s")
+                                await asyncio.sleep(8)
                                 shutdown_event.set()
                                 # Use Twilio REST API to terminate the actual phone call
                                 if call_sid:
