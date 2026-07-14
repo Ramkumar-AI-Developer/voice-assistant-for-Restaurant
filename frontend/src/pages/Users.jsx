@@ -1,12 +1,15 @@
 import { useState } from 'react';
 import { HiOutlinePlus, HiOutlineX } from 'react-icons/hi';
 import toast from 'react-hot-toast';
-import { authAPI } from '../services/api';
+
+import { useDispatch } from 'react-redux';
+import { registerUser } from '../store/authSlice';
 
 export default function Users() {
   const [showModal, setShowModal] = useState(false);
   const [form, setForm] = useState({ username: '', password: '', email: '', is_admin: false });
   const [loading, setLoading] = useState(false);
+  const dispatch = useDispatch();
 
   const handleCreate = async () => {
     if (!form.username || !form.password) {
@@ -15,12 +18,12 @@ export default function Users() {
     }
     setLoading(true);
     try {
-      await authAPI.register(form);
+      await dispatch(registerUser(form));
       toast.success(`User "${form.username}" created successfully`);
       setShowModal(false);
       setForm({ username: '', password: '', email: '', is_admin: false });
     } catch (err) {
-      toast.error(err.response?.data?.detail || 'Failed to create user');
+      toast.error(err.message || 'Failed to create user');
     } finally { setLoading(false); }
   };
 

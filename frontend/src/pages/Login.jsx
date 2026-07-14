@@ -1,27 +1,32 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { authAPI } from '../services/api';
+import { useDispatch, useSelector } from 'react-redux';
+import { loginUser, clearError } from '../store/authSlice';
 
-export default function Login({ onLogin }) {
+export default function Login() {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
-  const [error, setError] = useState('');
-  const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
+  const dispatch = useDispatch();
+
+  const { loading, error, token } = useSelector((state) => state.auth);
+
+  useEffect(() => {
+    dispatch(clearError());
+  }, [dispatch]);
+
+  useEffect(() => {
+    if (token) {
+      navigate('/');
+    }
+  }, [token, navigate]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    setError('');
-    setLoading(true);
     try {
-      const res = await authAPI.login(username, password);
-      localStorage.setItem('token', res.data.access_token);
-      onLogin({ username: res.data.username, is_admin: res.data.is_admin });
-      navigate('/');
+      await dispatch(loginUser(username, password));
     } catch (err) {
-      setError(err.response?.data?.detail || 'Login failed. Check credentials.');
-    } finally {
-      setLoading(false);
+      // Error handled by slice
     }
   };
 

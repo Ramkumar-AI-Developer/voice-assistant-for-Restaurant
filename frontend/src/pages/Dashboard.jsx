@@ -1,94 +1,209 @@
 import { useState, useEffect, useRef } from 'react';
 import { HiOutlineShoppingCart, HiOutlineCurrencyDollar, HiOutlinePhone, HiOutlineClock } from 'react-icons/hi';
-import { dashboardAPI } from '../services/api';
+import { useSelector, useDispatch } from 'react-redux';
+import { createOrder } from '../store/orderSlice';
+import { addCall } from '../store/callSlice';
+import toast from 'react-hot-toast';
 
 export default function Dashboard() {
-  const [stats, setStats] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [wsConnected, setWsConnected] = useState(false);
-  const [recentEvents, setRecentEvents] = useState([]);
-  const wsRef = useRef(null);
+  const orders = useSelector(state => state.orders.orders);
+  const calls = useSelector(state => state.calls.calls);
+  const menuItems = useSelector(state => state.menu.items);
+  const dispatch = useDispatch();
 
+  const [wsConnected, setWsConnected] = useState(true);
+  const [recentEvents, setRecentEvents] = useState([]);
+  const activityTimerRef = useRef(null);
+
+  // Seed initial events on load
   useEffect(() => {
-    loadStats();
-    connectWebSocket();
+    setRecentEvents([
+      { type: 'call_ended', data: { duration: 125 }, time: new Date(Date.now() - 30 * 60000).toLocaleTimeString() },
+      { type: 'new_order', data: { customer_name: 'Rajesh Patel', total: 23.96 }, time: new Date(Date.now() - 25 * 60000).toLocaleTimeString() },
+      { type: 'call_ended', data: { duration: 98 }, time: new Date(Date.now() - 15 * 60000).toLocaleTimeString() },
+      { type: 'new_order', data: { customer_name: 'Priya Sharma', total: 15.00 }, time: new Date(Date.now() - 12 * 60000).toLocaleTimeString() },
+    ]);
+
+    // Setup simulated activity generator (every 45 seconds)
+    activityTimerRef.current = setInterval(generateMockActivity, 45000);
+
     return () => {
-      if (wsRef.current) wsRef.current.close();
+      if (activityTimerRef.current) clearInterval(activityTimerRef.current);
     };
   }, []);
 
-  const loadStats = async () => {
-    try {
-      const res = await dashboardAPI.stats();
-      setStats(res.data);
-    } catch (err) {
-      console.error('Failed to load stats:', err);
-    } finally {
-      setLoading(false);
-    }
-  };
+  // Names pool for mock orders
+  const mockNames = ['Amit Verma', 'Sanjay Kumar', 'Neha Gupta', 'Rohan Das', 'Komal Mehta', 'Vikram Singh', 'Deepa Rao'];
+  const mockPhones = ['+44 7911 223344', '+44 7911 554433', '+44 7911 778899', '+44 7911 990011', '+44 7911 112233'];
 
-  const connectWebSocket = () => {
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const apiBase = import.meta.env.VITE_API_URL || window.location.origin;
-    const wsHost = apiBase.replace(/^https?:\/\//, '');
-    const wsUrl = `${protocol}//${wsHost}/ws/dashboard`;
+  const generateMockActivity = () => {
+    const eventType = Math.random() > 0.5 ? 'call_started' : 'new_order';
+    const randomName = mockNames[Math.floor(Math.random() * mockNames.length)];
+    const randomPhone = mockPhones[Math.floor(Math.random() * mockPhones.length)];
+    const timeStr = new Date().toLocaleTimeString();
 
-    try {
-      const ws = new WebSocket(wsUrl);
-      wsRef.current = ws;
+    if (eventType === 'call_started') {
+      // 1. Simulates a call starting
+      setRecentEvents(prev => [{
+        type: 'call_started',
+        data: {},
+        time: timeStr,
+      }, ...prev].slice(0, 10));
 
-      ws.onopen = () => {
-        setWsConnected(true);
-        console.log('Dashboard WebSocket connected');
-      };
-
-      ws.onmessage = (event) => {
-        const msg = JSON.parse(event.data);
-        if (msg.type === 'heartbeat' || msg.type === 'pong') return;
-
-        // Add event to recent events feed
-        setRecentEvents(prev => [{
-          type: msg.type,
-          data: msg.data,
-          time: new Date().toLocaleTimeString(),
-        }, ...prev].slice(0, 10));
-
-        // Refresh stats on important events
-        if (['new_order', 'call_ended', 'order_update'].includes(msg.type)) {
-          loadStats();
+      // After 6 seconds, simulate it completing with an order
+      setTimeout(() => {
+        const duration = Math.floor(Math.random() * 90) + 40;
+        const availableDishes = menuItems.filter(item => item.available);
+        const orderItemsCount = Math.floor(Math.random() * 2) + 1;
+        const selectedDishes = [];
+        
+        for (let i = 0; i < orderItemsCount; i++) {
+          const dish = availableDishes[Math.floor(Math.random() * availableDishes.length)];
+          if (dish && !selectedDishes.some(d => d.id === dish.id)) {
+            selectedDishes.push({
+              ...dish,
+              quantity: Math.floor(Math.random() * 2) + 1,
+              notes: Math.random() > 0.7 ? 'spicy' : '',
+            });
+          }
         }
-      };
 
-      ws.onclose = () => {
-        setWsConnected(false);
-        // Auto-reconnect after 3 seconds
-        setTimeout(connectWebSocket, 3000);
-      };
+        const totalValue = selectedDishes.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+        
+        // Dispatch call completion
+        const newCallId = Date.now();
+        const newOrderId = 1000 + orders.length + 1;
 
-      ws.onerror = () => setWsConnected(false);
+        dispatch(addCall({
+          phone_number: randomPhone,
+          customer_name: randomName,
+          status: 'completed',
+          duration_seconds: duration,
+          order_id: newOrderId,
+          messages: [
+            { role: 'assistant', content: 'Vasantha Vilas AI Assistant, how can I help?' },
+            { role: 'user', content: `Can I get some food? I'd like ${selectedDishes.map(d => `${d.quantity} ${d.name}`).join(' and ')}.` },
+            { role: 'assistant', content: `Sure! That's placed for you.` }
+          ]
+        }));
 
-      // Ping every 25 seconds to keep alive
-      const pingInterval = setInterval(() => {
-        if (ws.readyState === WebSocket.OPEN) ws.send('ping');
-      }, 25000);
+        dispatch(createOrder({
+          customer_name: randomName,
+          customer_phone: randomPhone,
+          items: selectedDishes,
+          total: totalValue,
+          order_type: 'call',
+        }));
 
-      ws.addEventListener('close', () => clearInterval(pingInterval));
-    } catch (err) {
-      console.error('WebSocket connection failed:', err);
+        setRecentEvents(prev => [
+          {
+            type: 'new_order',
+            data: { customer_name: randomName, total: totalValue },
+            time: new Date().toLocaleTimeString(),
+          },
+          {
+            type: 'call_ended',
+            data: { duration },
+            time: new Date().toLocaleTimeString(),
+          },
+          ...prev
+        ].slice(0, 10));
+
+        toast.success(`📞 Call Completed: New order from ${randomName} (£${totalValue.toFixed(2)})`);
+      }, 6000);
+
+    } else {
+      // 2. Simulates a Walk-in or Takeaway order directly placed
+      const availableDishes = menuItems.filter(item => item.available);
+      const dish = availableDishes[Math.floor(Math.random() * availableDishes.length)];
+      if (!dish) return;
+
+      const qty = Math.floor(Math.random() * 2) + 1;
+      const totalValue = dish.price * qty;
+
+      dispatch(createOrder({
+        customer_name: randomName,
+        customer_phone: 'Walk-in',
+        items: [{ ...dish, quantity: qty, notes: '' }],
+        total: totalValue,
+        order_type: Math.random() > 0.5 ? 'takeaway' : 'eat in',
+      }));
+
+      setRecentEvents(prev => [{
+        type: 'new_order',
+        data: { customer_name: randomName, total: totalValue },
+        time: timeStr,
+      }, ...prev].slice(0, 10));
+
+      toast(`🛒 Direct Order from ${randomName} (£${totalValue.toFixed(2)})`, { icon: '🛒' });
     }
   };
 
-  if (loading) return <div className="loading"><div className="spinner" /></div>;
+  // Compute stats dynamically from Redux store
+  const getStats = () => {
+    const todayStr = new Date().toDateString();
+    
+    // Filter for today
+    const todayOrders = orders.filter(o => new Date(o.created_at).toDateString() === todayStr);
+    const todayCalls = calls.filter(c => new Date(c.started_at).toDateString() === todayStr);
+    
+    const todayRevenue = todayOrders.reduce((sum, o) => sum + (o.total || 0), 0);
+    const completedCalls = todayCalls.filter(c => c.status === 'completed');
+    const avgCallDuration = completedCalls.length > 0
+      ? Math.round(completedCalls.reduce((sum, c) => sum + (c.duration_seconds || 0), 0) / completedCalls.length)
+      : 0;
 
-  const today = stats?.today || {};
-  const totals = stats?.totals || {};
+    // Totals
+    const totalOrders = orders.length;
+    const totalRevenue = orders.reduce((sum, o) => sum + (o.total || 0), 0);
+    const totalCalls = calls.length;
+
+    // Pending count
+    const pendingOrdersCount = orders.filter(o => ['pending', 'confirmed', 'preparing', 'ready'].includes(o.status)).length;
+
+    // Weekly trend (last 7 days)
+    const weeklyTrend = [];
+    const now = new Date();
+    for (let i = 6; i >= 0; i--) {
+      const d = new Date(now);
+      d.setDate(now.getDate() - i);
+      const dayName = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][d.getDay()];
+      const dayOrdersCount = orders.filter(o => new Date(o.created_at).toDateString() === d.toDateString()).length;
+      weeklyTrend.push({ day: dayName, orders: dayOrdersCount });
+    }
+
+    return {
+      today: {
+        orders: todayOrders.length,
+        revenue: todayRevenue,
+        calls: todayCalls.length,
+        avg_call_duration: avgCallDuration,
+      },
+      totals: {
+        orders: totalOrders,
+        revenue: totalRevenue,
+        calls: totalCalls,
+      },
+      pending_orders: pendingOrdersCount,
+      weekly_trend: weeklyTrend,
+      recent_orders: orders.slice(0, 5),
+    };
+  };
+
+  const stats = getStats();
+  const today = stats.today;
+  const totals = stats.totals;
 
   const getGreeting = () => {
     const hour = new Date().getHours();
     if (hour < 12) return 'Good Morning';
     if (hour < 17) return 'Good Afternoon';
     return 'Good Evening';
+  };
+
+  const getStatusColor = (status) => {
+    const map = { pending: 'warning', confirmed: 'info', preparing: 'primary', ready: 'success', completed: 'success', cancelled: 'danger' };
+    return map[status] || 'muted';
   };
 
   return (
@@ -98,11 +213,11 @@ export default function Dashboard() {
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
           <div>
             <h1>{getGreeting()}, Vasantha Vilas 🍃</h1>
-            <p>Here's how your AI voice assistant is performing today</p>
+            <p>Here's how your static demo dashboard is performing</p>
           </div>
           <div className="live-indicator">
             <div className="live-dot" />
-            {wsConnected ? 'Live' : 'Reconnecting...'}
+            {wsConnected ? 'Live Simulation' : 'Offline'}
           </div>
         </div>
       </div>
@@ -111,22 +226,22 @@ export default function Dashboard() {
       <div className="stats-grid">
         <div className="stat-card">
           <div className="stat-icon blue"><HiOutlineShoppingCart /></div>
-          <div className="stat-value">{today.orders || 0}</div>
+          <div className="stat-value">{today.orders}</div>
           <div className="stat-label">Orders Today</div>
         </div>
         <div className="stat-card">
           <div className="stat-icon green"><HiOutlineCurrencyDollar /></div>
-          <div className="stat-value">£{(today.revenue || 0).toFixed(2)}</div>
+          <div className="stat-value">£{today.revenue.toFixed(2)}</div>
           <div className="stat-label">Revenue Today</div>
         </div>
         <div className="stat-card">
           <div className="stat-icon purple"><HiOutlinePhone /></div>
-          <div className="stat-value">{today.calls || 0}</div>
+          <div className="stat-value">{today.calls}</div>
           <div className="stat-label">Calls Today</div>
         </div>
         <div className="stat-card">
           <div className="stat-icon yellow"><HiOutlineClock /></div>
-          <div className="stat-value">{today.avg_call_duration || 0}s</div>
+          <div className="stat-value">{today.avg_call_duration}s</div>
           <div className="stat-label">Avg. Call Duration</div>
         </div>
       </div>
@@ -138,8 +253,8 @@ export default function Dashboard() {
             <span className="card-title">Weekly Order Trend</span>
           </div>
           <div style={{ display: 'flex', alignItems: 'flex-end', gap: 8, height: 120, padding: '0 8px' }}>
-            {(stats?.weekly_trend || []).map((day, i) => {
-              const maxOrders = Math.max(...(stats?.weekly_trend || []).map(d => d.orders), 1);
+            {stats.weekly_trend.map((day, i) => {
+              const maxOrders = Math.max(...stats.weekly_trend.map(d => d.orders), 1);
               const height = Math.max(8, (day.orders / maxOrders) * 100);
               return (
                 <div key={i} style={{ flex: 1, textAlign: 'center' }}>
@@ -165,19 +280,19 @@ export default function Dashboard() {
           <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <span style={{ color: 'var(--text-secondary)', fontSize: 14 }}>Total Orders</span>
-              <span style={{ fontSize: 18, fontWeight: 700 }}>{totals.orders || 0}</span>
+              <span style={{ fontSize: 18, fontWeight: 700 }}>{totals.orders}</span>
             </div>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <span style={{ color: 'var(--text-secondary)', fontSize: 14 }}>Total Revenue</span>
-              <span style={{ fontSize: 18, fontWeight: 700, color: 'var(--success)' }}>£{(totals.revenue || 0).toFixed(2)}</span>
+              <span style={{ fontSize: 18, fontWeight: 700, color: 'var(--success)' }}>£{totals.revenue.toFixed(2)}</span>
             </div>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <span style={{ color: 'var(--text-secondary)', fontSize: 14 }}>Total Calls</span>
-              <span style={{ fontSize: 18, fontWeight: 700 }}>{totals.calls || 0}</span>
+              <span style={{ fontSize: 18, fontWeight: 700 }}>{totals.calls}</span>
             </div>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <span style={{ color: 'var(--text-secondary)', fontSize: 14 }}>Pending Orders</span>
-              <span className="badge badge-warning">{stats?.pending_orders || 0}</span>
+              <span className="badge badge-warning">{stats.pending_orders}</span>
             </div>
           </div>
         </div>
@@ -187,7 +302,7 @@ export default function Dashboard() {
       {recentEvents.length > 0 && (
         <div className="card" style={{ marginTop: 20 }}>
           <div className="card-header">
-            <span className="card-title">Live Activity</span>
+            <span className="card-title">Live Activity (Simulated)</span>
             <div className="live-indicator"><div className="live-dot" />Real-time</div>
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
@@ -200,8 +315,8 @@ export default function Dashboard() {
               }}>
                 <span>
                   {evt.type === 'new_order' && `🛒 New order from ${evt.data?.customer_name || 'customer'} — £${evt.data?.total?.toFixed(2) || '0.00'}`}
-                  {evt.type === 'call_started' && `📞 Call started`}
-                  {evt.type === 'call_ended' && `📴 Call ended (${evt.data?.duration || 0}s)`}
+                  {evt.type === 'call_started' && `📞 Incoming simulated call...`}
+                  {evt.type === 'call_ended' && `📴 Simulated call ended (${evt.data?.duration || 0}s)`}
                   {evt.type === 'order_update' && `➕ ${evt.data?.item || 'Item'} added to order`}
                 </span>
                 <span style={{ color: 'var(--text-muted)', fontSize: 11 }}>{evt.time}</span>
@@ -228,10 +343,10 @@ export default function Dashboard() {
               </tr>
             </thead>
             <tbody>
-              {(stats?.recent_orders || []).length === 0 ? (
+              {stats.recent_orders.length === 0 ? (
                 <tr><td colSpan={5} style={{ textAlign: 'center', padding: 32, color: 'var(--text-muted)' }}>No orders yet</td></tr>
               ) : (
-                (stats?.recent_orders || []).map((o) => (
+                stats.recent_orders.map((o) => (
                   <tr key={o.id}>
                     <td style={{ fontWeight: 600 }}>#{o.id}</td>
                     <td>{o.customer_name}</td>
@@ -247,9 +362,4 @@ export default function Dashboard() {
       </div>
     </div>
   );
-}
-
-function getStatusColor(status) {
-  const map = { pending: 'warning', confirmed: 'info', preparing: 'primary', ready: 'success', completed: 'success', cancelled: 'danger' };
-  return map[status] || 'muted';
 }

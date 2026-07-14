@@ -1,12 +1,16 @@
 import { NavLink, useNavigate } from 'react-router-dom';
+import { useSelector, useDispatch } from 'react-redux';
+import { logout } from '../store/authSlice';
 import { HiOutlineHome, HiOutlineClipboardList, HiOutlinePhone, HiOutlineUserGroup, HiOutlineLogout } from 'react-icons/hi';
 import { MdOutlineRestaurantMenu } from 'react-icons/md';
 
-export default function Sidebar({ user, onLogout }) {
+export default function Sidebar() {
+  const user = useSelector((state) => state.auth.user);
+  const dispatch = useDispatch();
   const navigate = useNavigate();
 
   const handleLogout = () => {
-    onLogout();
+    dispatch(logout());
     navigate('/login');
   };
 

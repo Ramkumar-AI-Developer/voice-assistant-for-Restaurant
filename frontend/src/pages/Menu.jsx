@@ -1,11 +1,12 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useRef } from 'react';
 import { HiOutlinePlus, HiOutlineUpload, HiOutlineDownload, HiOutlinePencil, HiOutlineTrash, HiOutlineX } from 'react-icons/hi';
 import toast from 'react-hot-toast';
-import { menuAPI } from '../services/api';
+import { useSelector, useDispatch } from 'react-redux';
+import { addItem, updateItem, deleteItem, bulkDeleteItems, importMenu } from '../store/menuSlice';
 
 export default function Menu() {
-  const [items, setItems] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const items = useSelector(state => state.menu.items);
+  const dispatch = useDispatch();
   const [showModal, setShowModal] = useState(false);
   const [editItem, setEditItem] = useState(null);
   const [selectedIds, setSelectedIds] = useState([]);
@@ -13,17 +14,6 @@ export default function Menu() {
 
   // Form state
   const [form, setForm] = useState({ name: '', price: '', description: '', category: '', available: true, customisations: '' });
-
-  useEffect(() => { loadMenu(); }, []);
-
-  const loadMenu = async () => {
-    try {
-      const res = await menuAPI.list();
-      setItems(res.data);
-    } catch (err) {
-      toast.error('Failed to load menu');
-    } finally { setLoading(false); }
-  };
 
   const openAdd = () => {
     setEditItem(null);
@@ -44,7 +34,7 @@ export default function Menu() {
     setShowModal(true);
   };
 
-  const handleSave = async () => {
+  const handleSave = () => {
     if (!form.name || !form.price || !form.category) {
       toast.error('Name, price, and category are required');
       return;
@@ -59,44 +49,29 @@ export default function Menu() {
       customisations: form.customisations.split(',').map(s => s.trim()).filter(Boolean),
     };
 
-    try {
-      if (editItem) {
-        await menuAPI.update(editItem.id, data);
-        toast.success('Menu item updated');
-      } else {
-        await menuAPI.create(data);
-        toast.success('Menu item added');
-      }
-      setShowModal(false);
-      loadMenu();
-    } catch (err) {
-      toast.error(err.response?.data?.detail || 'Failed to save');
+    if (editItem) {
+      dispatch(updateItem({ id: editItem.id, ...data }));
+      toast.success('Menu item updated');
+    } else {
+      dispatch(addItem({ id: `ITEM-${Date.now()}`, ...data }));
+      toast.success('Menu item added');
     }
+    setShowModal(false);
   };
 
-  const handleDelete = async (id, name) => {
+  const handleDelete = (id, name) => {
     if (!confirm(`Delete "${name}"?`)) return;
-    try {
-      await menuAPI.delete(id);
-      toast.success('Item deleted');
-      setSelectedIds(prev => prev.filter(i => i !== id));
-      loadMenu();
-    } catch (err) {
-      toast.error('Failed to delete');
-    }
+    dispatch(deleteItem(id));
+    toast.success('Item deleted');
+    setSelectedIds(prev => prev.filter(i => i !== id));
   };
 
-  const handleBulkDelete = async () => {
+  const handleBulkDelete = () => {
     if (selectedIds.length === 0) return;
     if (!confirm(`Delete ${selectedIds.length} items?`)) return;
-    try {
-      await menuAPI.bulkDelete(selectedIds);
-      toast.success(`Deleted ${selectedIds.length} items`);
-      setSelectedIds([]);
-      loadMenu();
-    } catch (err) {
-      toast.error('Bulk delete failed');
-    }
+    dispatch(bulkDeleteItems(selectedIds));
+    toast.success(`Deleted ${selectedIds.length} items`);
+    setSelectedIds([]);
   };
 
   const toggleSelect = (id) => {
@@ -116,26 +91,74 @@ export default function Menu() {
     }
   };
 
-  const handleUpload = async (e) => {
+  const handleUpload = (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    try {
-      const res = await menuAPI.upload(file);
-      toast.success(`Imported: ${res.data.created} new, ${res.data.updated} updated`);
-      loadMenu();
-    } catch (err) {
-      toast.error(err.response?.data?.detail || 'Upload failed');
-    }
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      try {
+        const text = event.target.result;
+        const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
+        if (lines.length <= 1) {
+          toast.error('CSV file is empty or invalid');
+          return;
+        }
+
+        const headers = lines[0].split(',').map(h => h.trim().toLowerCase());
+        const parsed = [];
+
+        for (let i = 1; i < lines.length; i++) {
+          // Simple comma splitter that handles quotes if necessary, 
+          // but for demo a simple split is fine.
+          const values = lines[i].split(',').map(v => v.trim());
+          const obj = {};
+          headers.forEach((h, index) => {
+            obj[h] = values[index];
+          });
+
+          if (obj.name && obj.price && obj.category) {
+            parsed.push({
+              id: obj.id || '',
+              name: obj.name,
+              price: parseFloat(obj.price) || 0,
+              description: obj.description || '',
+              category: obj.category,
+              available: obj.available !== 'No' && obj.available !== 'false',
+              customisations: obj.customisations ? obj.customisations.split(';').map(c => c.trim()).filter(Boolean) : [],
+            });
+          }
+        }
+
+        if (parsed.length > 0) {
+          dispatch(importMenu(parsed));
+          toast.success(`Imported/Updated ${parsed.length} items`);
+        } else {
+          toast.error('No valid menu items found in CSV');
+        }
+      } catch (err) {
+        toast.error('Failed to parse CSV file');
+      }
+    };
+    reader.readAsText(file);
     e.target.value = '';
   };
 
-  const handleDownloadTemplate = async () => {
+  const handleDownloadTemplate = () => {
     try {
-      const res = await menuAPI.downloadTemplate();
-      const url = URL.createObjectURL(new Blob([res.data]));
+      const headers = ['id', 'name', 'price', 'description', 'category', 'available', 'customisations'];
+      const rows = [
+        ['SB05', 'Lemon Coriander Soup', '4.99', 'Tangy and spicy soup', 'Soup Bowl', 'Yes', ''],
+        ['ST25', 'Veg Harabhara Kabab', '7.99', 'Spinach and potato patties fried', 'Starters', 'Yes', 'spicy;mild'],
+      ];
+      const csvContent = [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
-      a.href = url; a.download = 'menu_template.xlsx'; a.click();
+      a.href = url;
+      a.download = 'menu_template.csv';
+      a.click();
       URL.revokeObjectURL(url);
+      toast.success('Template downloaded');
     } catch (err) {
       toast.error('Failed to download template');
     }
@@ -148,9 +171,6 @@ export default function Menu() {
     acc[cat].push(item);
     return acc;
   }, {});
-
-  if (loading) return <div className="loading"><div className="spinner" /></div>;
-
   return (
     <div>
       <div className="page-header">

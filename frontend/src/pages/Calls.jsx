@@ -1,31 +1,24 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { HiOutlineEye, HiOutlineX } from 'react-icons/hi';
 import toast from 'react-hot-toast';
-import { callsAPI } from '../services/api';
+import { useSelector } from 'react-redux';
 
 export default function Calls() {
-  const [data, setData] = useState({ calls: [], total: 0, page: 1, pages: 0 });
-  const [loading, setLoading] = useState(true);
+  const calls = useSelector(state => state.calls.calls);
   const [page, setPage] = useState(1);
   const [selectedCall, setSelectedCall] = useState(null);
 
-  useEffect(() => { loadCalls(); }, [page]);
+  const perPage = 20;
+  const total = calls.length;
+  const pages = Math.ceil(total / perPage) || 1;
+  const startIdx = (page - 1) * perPage;
+  const paginatedCalls = calls.slice(startIdx, startIdx + perPage);
 
-  const loadCalls = async () => {
-    setLoading(true);
-    try {
-      const res = await callsAPI.list(page);
-      setData(res.data);
-    } catch (err) {
-      toast.error('Failed to load call history');
-    } finally { setLoading(false); }
-  };
-
-  const viewCall = async (id) => {
-    try {
-      const res = await callsAPI.get(id);
-      setSelectedCall(res.data);
-    } catch (err) {
+  const viewCall = (id) => {
+    const call = calls.find(c => c.id === id);
+    if (call) {
+      setSelectedCall(call);
+    } else {
       toast.error('Failed to load call details');
     }
   };
@@ -49,9 +42,7 @@ export default function Calls() {
       </div>
 
       <div className="card">
-        {loading ? (
-          <div className="loading"><div className="spinner" /></div>
-        ) : data.calls.length === 0 ? (
+        {calls.length === 0 ? (
           <div className="empty-state">
             <h3>No call history yet</h3>
             <p>Call logs will appear here when customers call your AI assistant</p>
@@ -73,7 +64,7 @@ export default function Calls() {
                   </tr>
                 </thead>
                 <tbody>
-                  {data.calls.map((c) => (
+                  {paginatedCalls.map((c) => (
                     <tr key={c.id}>
                       <td>{c.id}</td>
                       <td style={{ fontFamily: 'monospace', fontSize: 12 }}>{c.phone_number}</td>
@@ -93,8 +84,8 @@ export default function Calls() {
 
             <div className="pagination">
               <button disabled={page <= 1} onClick={() => setPage(page - 1)}>Previous</button>
-              <span>Page {data.page} of {data.pages}</span>
-              <button disabled={page >= data.pages} onClick={() => setPage(page + 1)}>Next</button>
+              <span>Page {page} of {pages}</span>
+              <button disabled={page >= pages} onClick={() => setPage(page + 1)}>Next</button>
             </div>
           </>
         )}
