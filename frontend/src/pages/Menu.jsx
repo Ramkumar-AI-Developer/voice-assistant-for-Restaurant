@@ -234,7 +234,7 @@ export default function Menu() {
                         />
                       </td>
                       <td style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{item.name}</td>
-                      <td style={{ fontWeight: 600, color: 'var(--success)' }}>£{item.price?.toFixed(2)}</td>
+                      <td style={{ fontWeight: 600, color: 'var(--success)' }}>₹{item.price?.toFixed(2)}</td>
                       <td style={{ maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis' }}>{item.description}</td>
                       <td>
                         <span className={`badge ${item.available ? 'badge-success' : 'badge-danger'}`}>

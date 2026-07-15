@@ -36,7 +36,7 @@ export default function Orders() {
 
   const handleExport = () => {
     try {
-      const headers = ['Order #', 'Customer Name', 'Phone', 'Items Count', 'Total (£)', 'Type', 'Status', 'Date/Time'];
+      const headers = ['Order #', 'Customer Name', 'Phone', 'Items Count', 'Total (₹)', 'Type', 'Status', 'Date/Time'];
       const rows = filteredOrders.map(o => {
         const itemNames = (o.items || []).map(itm => `${itm.name} (x${itm.quantity})`).join('; ');
         return [
@@ -212,7 +212,7 @@ export default function Orders() {
                       <td>{o.customer_name}</td>
                       <td style={{ fontFamily: 'monospace', fontSize: 12 }}>{o.customer_phone}</td>
                       <td>{o.items?.length || 0} items</td>
-                      <td style={{ fontWeight: 700, color: 'var(--success)' }}>£{o.total?.toFixed(2)}</td>
+                      <td style={{ fontWeight: 700, color: 'var(--success)' }}>₹{o.total?.toFixed(2)}</td>
                       <td><span className="badge badge-muted">{o.order_type}</span></td>
                       <td><span className={`badge badge-${statusColor(o.status)}`}>{o.status}</span></td>
                       <td style={{ color: 'var(--text-muted)', fontSize: 12 }}>{o.created_at ? new Date(o.created_at).toLocaleString() : '-'}</td>
@@ -260,14 +260,14 @@ export default function Orders() {
                     <tr key={i}>
                       <td>{item.name}</td>
                       <td>{item.quantity}</td>
-                      <td>£{item.unit_price?.toFixed(2)}</td>
-                      <td style={{ fontWeight: 600 }}>£{item.subtotal?.toFixed(2)}</td>
+                      <td>₹{item.unit_price?.toFixed(2)}</td>
+                      <td style={{ fontWeight: 600 }}>₹{item.subtotal?.toFixed(2)}</td>
                       <td style={{ color: 'var(--text-muted)' }}>{item.notes || '—'}</td>
                     </tr>
                   ))}
                 </tbody>
               </table>
-              <div style={{ textAlign: 'right', fontWeight: 700, fontSize: 16, color: 'var(--success)' }}>Total: £{selectedOrder.total?.toFixed(2)}</div>
+              <div style={{ textAlign: 'right', fontWeight: 700, fontSize: 16, color: 'var(--success)' }}>Total: ₹{selectedOrder.total?.toFixed(2)}</div>
             </div>
 
             <div className="modal-footer">
@@ -351,7 +351,7 @@ export default function Orders() {
                         }}>
                           <div>
                             <span style={{ fontWeight: 600 }}>{item.name}</span>
-                            <span style={{ marginLeft: 8, color: 'var(--success)', fontWeight: 600 }}>£{item.price?.toFixed(2)}</span>
+                            <span style={{ marginLeft: 8, color: 'var(--success)', fontWeight: 600 }}>₹{item.price?.toFixed(2)}</span>
                             {item.description && <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>{item.description}</div>}
                           </div>
                           <button className="btn btn-sm btn-success" style={{ padding: '4px 8px' }} onClick={() => addToCart(item)}>
@@ -389,7 +389,7 @@ export default function Orders() {
                                 onChange={(e) => updateCartQty(item.id, e.target.value)}
                               />
                               <span style={{ fontWeight: 700, fontSize: 13, minWidth: 50, textAlign: 'right' }}>
-                                £{(item.price * item.quantity).toFixed(2)}
+                                ₹{(item.price * item.quantity).toFixed(2)}
                               </span>
                               <button className="btn btn-sm btn-danger btn-icon" onClick={() => removeFromCart(item.id)}>
                                 <HiOutlineTrash />
@@ -412,7 +412,7 @@ export default function Orders() {
                 <div style={{ borderTop: '1px solid var(--border)', paddingTop: 16, marginTop: 16 }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
                     <span style={{ fontSize: 15, fontWeight: 600 }}>Total Order Value:</span>
-                    <span style={{ fontSize: 20, fontWeight: 800, color: 'var(--success)' }}>£{cartTotal.toFixed(2)}</span>
+                    <span style={{ fontSize: 20, fontWeight: 800, color: 'var(--success)' }}>₹{cartTotal.toFixed(2)}</span>
                   </div>
                   <div className="modal-footer" style={{ padding: 0, justifyContent: 'flex-end', gap: 10 }}>
                     <button className="btn btn-secondary" onClick={() => setShowCreateModal(false)}>Cancel</button>

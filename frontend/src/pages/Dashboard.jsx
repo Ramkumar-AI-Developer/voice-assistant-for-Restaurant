@@ -109,7 +109,7 @@ export default function Dashboard() {
           ...prev
         ].slice(0, 10));
 
-        toast.success(`📞 Call Completed: New order from ${randomName} (£${totalValue.toFixed(2)})`);
+        toast.success(`📞 Call Completed: New order from ${randomName} (₹${totalValue.toFixed(2)})`);
       }, 6000);
 
     } else {
@@ -135,7 +135,7 @@ export default function Dashboard() {
         time: timeStr,
       }, ...prev].slice(0, 10));
 
-      toast(`🛒 Direct Order from ${randomName} (£${totalValue.toFixed(2)})`, { icon: '🛒' });
+      toast(`🛒 Direct Order from ${randomName} (₹${totalValue.toFixed(2)})`, { icon: '🛒' });
     }
   };
 
@@ -231,7 +231,7 @@ export default function Dashboard() {
         </div>
         <div className="stat-card">
           <div className="stat-icon green"><HiOutlineCurrencyDollar /></div>
-          <div className="stat-value">£{today.revenue.toFixed(2)}</div>
+          <div className="stat-value">₹{today.revenue.toFixed(2)}</div>
           <div className="stat-label">Revenue Today</div>
         </div>
         <div className="stat-card">
@@ -284,7 +284,7 @@ export default function Dashboard() {
             </div>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <span style={{ color: 'var(--text-secondary)', fontSize: 14 }}>Total Revenue</span>
-              <span style={{ fontSize: 18, fontWeight: 700, color: 'var(--success)' }}>£{totals.revenue.toFixed(2)}</span>
+              <span style={{ fontSize: 18, fontWeight: 700, color: 'var(--success)' }}>₹{totals.revenue.toFixed(2)}</span>
             </div>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <span style={{ color: 'var(--text-secondary)', fontSize: 14 }}>Total Calls</span>
@@ -314,7 +314,7 @@ export default function Dashboard() {
                 borderLeft: '3px solid var(--accent-gold)',
               }}>
                 <span>
-                  {evt.type === 'new_order' && `🛒 New order from ${evt.data?.customer_name || 'customer'} — £${evt.data?.total?.toFixed(2) || '0.00'}`}
+                  {evt.type === 'new_order' && `🛒 New order from ${evt.data?.customer_name || 'customer'} — ₹${evt.data?.total?.toFixed(2) || '0.00'}`}
                   {evt.type === 'call_started' && `📞 Incoming simulated call...`}
                   {evt.type === 'call_ended' && `📴 Simulated call ended (${evt.data?.duration || 0}s)`}
                   {evt.type === 'order_update' && `➕ ${evt.data?.item || 'Item'} added to order`}
@@ -350,7 +350,7 @@ export default function Dashboard() {
                   <tr key={o.id}>
                     <td style={{ fontWeight: 600 }}>#{o.id}</td>
                     <td>{o.customer_name}</td>
-                    <td style={{ fontWeight: 600, color: 'var(--success)' }}>£{o.total?.toFixed(2)}</td>
+                    <td style={{ fontWeight: 600, color: 'var(--success)' }}>₹{o.total?.toFixed(2)}</td>
                     <td><span className={`badge badge-${getStatusColor(o.status)}`}>{o.status}</span></td>
                     <td style={{ color: 'var(--text-muted)' }}>{o.created_at ? new Date(o.created_at).toLocaleTimeString() : '-'}</td>
                   </tr>
