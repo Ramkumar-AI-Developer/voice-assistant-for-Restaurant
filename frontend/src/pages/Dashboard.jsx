@@ -56,7 +56,7 @@ export default function Dashboard() {
         const availableDishes = menuItems.filter(item => item.available);
         const orderItemsCount = Math.floor(Math.random() * 2) + 1;
         const selectedDishes = [];
-        
+
         for (let i = 0; i < orderItemsCount; i++) {
           const dish = availableDishes[Math.floor(Math.random() * availableDishes.length)];
           if (dish && !selectedDishes.some(d => d.id === dish.id)) {
@@ -69,7 +69,7 @@ export default function Dashboard() {
         }
 
         const totalValue = selectedDishes.reduce((sum, item) => sum + (item.price * item.quantity), 0);
-        
+
         // Dispatch call completion
         const newCallId = Date.now();
         const newOrderId = 1000 + orders.length + 1;
@@ -81,7 +81,7 @@ export default function Dashboard() {
           duration_seconds: duration,
           order_id: newOrderId,
           messages: [
-            { role: 'assistant', content: 'Vasantha Vilas AI Assistant, how can I help?' },
+            { role: 'assistant', content: 'Shiva Vilas AI Assistant, how can I help?' },
             { role: 'user', content: `Can I get some food? I'd like ${selectedDishes.map(d => `${d.quantity} ${d.name}`).join(' and ')}.` },
             { role: 'assistant', content: `Sure! That's placed for you.` }
           ]
@@ -142,11 +142,11 @@ export default function Dashboard() {
   // Compute stats dynamically from Redux store
   const getStats = () => {
     const todayStr = new Date().toDateString();
-    
+
     // Filter for today
     const todayOrders = orders.filter(o => new Date(o.created_at).toDateString() === todayStr);
     const todayCalls = calls.filter(c => new Date(c.started_at).toDateString() === todayStr);
-    
+
     const todayRevenue = todayOrders.reduce((sum, o) => sum + (o.total || 0), 0);
     const completedCalls = todayCalls.filter(c => c.status === 'completed');
     const avgCallDuration = completedCalls.length > 0
@@ -212,7 +212,7 @@ export default function Dashboard() {
       <div className="welcome-banner">
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
           <div>
-            <h1>{getGreeting()}, Vasantha Vilas 🍃</h1>
+            <h1>{getGreeting()}, Shiva Vilas 🍃</h1>
             <p>Here's how your static demo dashboard is performing</p>
           </div>
           <div className="live-indicator">

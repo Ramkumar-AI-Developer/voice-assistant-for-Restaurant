@@ -26,7 +26,7 @@ def send_order_sms(phone_number: str, order_id: int, items: List[OrderItem], tot
         from_number = settings.TWILIO_PHONE_NUMBER
         
         # Format the receipt
-        receipt_lines = [f"🧾 Vasantha Vilas - Order #{order_id}"]
+        receipt_lines = [f"🧾 Shiva Vilas - Order #{order_id}"]
         receipt_lines.append("---")
         
         for item in items:

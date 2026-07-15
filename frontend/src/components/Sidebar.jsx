@@ -29,9 +29,9 @@ export default function Sidebar() {
     <aside className="sidebar">
       <div className="sidebar-header">
         <div className="sidebar-logo">
-          <img src="/favicon.png" alt="Vasantha Vilas" className="sidebar-logo-img" style={{ width: '40px', height: '40px', borderRadius: '8px' }} />
+          <img src="/favicon.png" alt="Shiva Vilas" className="sidebar-logo-img" style={{ width: '40px', height: '40px', borderRadius: '8px' }} />
           <div>
-            <h1>Vasantha Vilas</h1>
+            <h1>Shiva Vilas</h1>
             <p>AI Voice Dashboard</p>
           </div>
         </div>

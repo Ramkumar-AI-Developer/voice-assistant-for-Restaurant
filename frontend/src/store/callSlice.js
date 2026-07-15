@@ -10,13 +10,13 @@ const DEFAULT_CALLS = [
     order_id: 1001,
     started_at: new Date(Date.now() - 30 * 60000).toISOString(),
     messages: [
-      { role: 'assistant', content: 'Hello! Welcome to Vasantha Vilas. How can I help you today?' },
+      { role: 'assistant', content: 'Hello! Welcome to Shiva Vilas. How can I help you today?' },
       { role: 'user', content: 'Hi, I would like to order two Masala Dosas and two Mango Lassis please.' },
       { role: 'assistant', content: 'Sure, that is two Masala Dosas and two Mango Lassis. Would you like anything else or any special customizations?' },
       { role: 'user', content: 'Could you make the dosas extra crispy and make sure we get extra chutney?' },
       { role: 'assistant', content: 'Got it! Extra crispy with extra chutney. Your total is £23.96. Shall I confirm this order?' },
       { role: 'user', content: 'Yes, please confirm.' },
-      { role: 'assistant', content: 'Perfect, your order has been placed. Thank you for calling Vasantha Vilas!' },
+      { role: 'assistant', content: 'Perfect, your order has been placed. Thank you for calling Shiva Vilas!' },
     ],
   },
   {
@@ -28,7 +28,7 @@ const DEFAULT_CALLS = [
     order_id: 1002,
     started_at: new Date(Date.now() - 15 * 60000).toISOString(),
     messages: [
-      { role: 'assistant', content: 'Hello! Welcome to Vasantha Vilas. How can I help you today?' },
+      { role: 'assistant', content: 'Hello! Welcome to Shiva Vilas. How can I help you today?' },
       { role: 'user', content: 'Hi, I want a Paneer Butter Masala and two Butter Naans.' },
       { role: 'assistant', content: 'Sure, one Paneer Butter Masala and two Butter Naans. Any customizations?' },
       { role: 'user', content: 'Make it medium spicy.' },
@@ -46,7 +46,7 @@ const DEFAULT_CALLS = [
     order_id: 1005,
     started_at: new Date(Date.now() - 5 * 60000).toISOString(),
     messages: [
-      { role: 'assistant', content: 'Hello! Welcome to Vasantha Vilas. How can I help you today?' },
+      { role: 'assistant', content: 'Hello! Welcome to Shiva Vilas. How can I help you today?' },
       { role: 'user', content: 'Hello, could I get a Gobi sixty-five and some veg noodles?' },
       { role: 'assistant', content: 'Sure, one Gobi 65 and one Veg Noodles. Any special instructions?' },
       { role: 'user', content: 'Can you do the noodles with less spice?' },
@@ -64,7 +64,7 @@ const DEFAULT_CALLS = [
     order_id: null,
     started_at: new Date(Date.now() - 40 * 60000).toISOString(),
     messages: [
-      { role: 'assistant', content: 'Hello! Welcome to Vasantha Vilas. How can I help you today?' },
+      { role: 'assistant', content: 'Hello! Welcome to Shiva Vilas. How can I help you today?' },
       { role: 'user', content: 'Hi, do you have any vegan options on the menu?' },
       { role: 'assistant', content: 'Yes! We have many vegan-friendly options like Pepper Rasam Soup, Gobi 65, Plain Papadum, Plain Dosa, Onion Dosa, and variety rices. Would you like to hear more?' },
       { role: 'user', content: 'Hold on, let me check... [hangs up]' },

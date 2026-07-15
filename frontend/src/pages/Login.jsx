@@ -36,9 +36,9 @@ export default function Login() {
       <div className="login-brand-panel">
         <div className="brand-logo-container">
           <div className="">
-            <img src="/favicon.png" alt="Vasantha Vilas" style={{ width: 100, height: 100, objectFit: 'contain' }} />
+            <img src="/favicon.png" alt="Shiva Vilas" style={{ width: 100, height: 100, objectFit: 'contain' }} />
           </div>
-          <h1 className="brand-title">Vasantha Vilas</h1>
+          <h1 className="brand-title">Shiva Vilas</h1>
           <div className="brand-decorative-line" />
           <p className="brand-subtitle">Indian Vegetarian Restaurant</p>
           <p className="brand-tagline">Since 2005</p>
@@ -92,7 +92,7 @@ export default function Login() {
           </form>
 
           <p className="login-footer-text">
-            Vasantha Vilas · AI Voice Assistant Dashboard
+            Shiva Vilas · AI Voice Assistant Dashboard
           </p>
         </div>
       </div>
