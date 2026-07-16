@@ -9,7 +9,7 @@ const DEFAULT_ORDERS = [
       { name: 'Masala Dosa', quantity: 2, unit_price: 768.90, subtotal: 1537.80, notes: 'Crispy, extra chutney' },
       { name: 'Lassi (Mango)', quantity: 2, unit_price: 548.90, subtotal: 1097.80, notes: 'Cold' },
     ],
-    total: 23.96,
+    total: 2635.60,
     order_type: 'call',
     status: 'completed',
     created_at: new Date(Date.now() - 25 * 60000).toISOString(),
@@ -22,7 +22,7 @@ const DEFAULT_ORDERS = [
       { name: 'Paneer Butter Masala', quantity: 1, unit_price: 1045.00, subtotal: 1045.00, notes: 'Medium spicy' },
       { name: 'Butter Naan', quantity: 2, unit_price: 302.50, subtotal: 605.00, notes: '' },
     ],
-    total: 15.00,
+    total: 1650.00,
     order_type: 'call',
     status: 'preparing',
     created_at: new Date(Date.now() - 12 * 60000).toISOString(),
@@ -34,7 +34,7 @@ const DEFAULT_ORDERS = [
     items: [
       { name: 'South Indian Meals', quantity: 1, unit_price: 1208.90, subtotal: 1208.90, notes: 'Takeaway' },
     ],
-    total: 10.99,
+    total: 1208.90,
     order_type: 'takeaway',
     status: 'pending',
     created_at: new Date(Date.now() - 5 * 60000).toISOString(),
@@ -48,7 +48,7 @@ const DEFAULT_ORDERS = [
       { name: 'Medhu Vada (2 pcs)', quantity: 1, unit_price: 495.00, subtotal: 495.00, notes: '' },
       { name: 'Filter Coffee', quantity: 1, unit_price: 275.00, subtotal: 275.00, notes: '' },
     ],
-    total: 12.50,
+    total: 1375.00,
     order_type: 'eat in',
     status: 'ready',
     created_at: new Date(Date.now() - 8 * 60000).toISOString(),
@@ -61,7 +61,7 @@ const DEFAULT_ORDERS = [
       { name: 'Gobi 65', quantity: 1, unit_price: 935.00, subtotal: 935.00, notes: '' },
       { name: 'Veg Noodles', quantity: 1, unit_price: 878.90, subtotal: 878.90, notes: 'Less spicy' },
     ],
-    total: 16.49,
+    total: 1813.90,
     order_type: 'call',
     status: 'confirmed',
     created_at: new Date(Date.now() - 2 * 60000).toISOString(),
@@ -69,9 +69,9 @@ const DEFAULT_ORDERS = [
 ];
 
 const getStoredOrders = () => {
-  const orders = localStorage.getItem('demo_orders');
+  const orders = localStorage.getItem('demo_orders_v2');
   if (orders) return JSON.parse(orders);
-  localStorage.setItem('demo_orders', JSON.stringify(DEFAULT_ORDERS));
+  localStorage.setItem('demo_orders_v2', JSON.stringify(DEFAULT_ORDERS));
   return DEFAULT_ORDERS;
 };
 
@@ -100,19 +100,19 @@ const orderSlice = createSlice({
         created_at: new Date().toISOString(),
       };
       state.orders.unshift(newOrder); // Add to the beginning
-      localStorage.setItem('demo_orders', JSON.stringify(state.orders));
+      localStorage.setItem('demo_orders_v2', JSON.stringify(state.orders));
     },
     updateOrderStatus: (state, action) => {
       const { id, status } = action.payload;
       const index = state.orders.findIndex(o => o.id === parseInt(id));
       if (index !== -1) {
         state.orders[index].status = status;
-        localStorage.setItem('demo_orders', JSON.stringify(state.orders));
+        localStorage.setItem('demo_orders_v2', JSON.stringify(state.orders));
       }
     },
     deleteOrder: (state, action) => {
       state.orders = state.orders.filter(o => o.id !== parseInt(action.payload));
-      localStorage.setItem('demo_orders', JSON.stringify(state.orders));
+      localStorage.setItem('demo_orders_v2', JSON.stringify(state.orders));
     },
   },
 });
