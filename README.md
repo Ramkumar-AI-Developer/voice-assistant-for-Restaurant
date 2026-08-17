@@ -4,15 +4,6 @@ AI-powered phone ordering system for a **Restaurant**. Customers call a Twilio p
 
 A full **React admin dashboard** lets staff manage the menu, view orders, review call transcripts, and monitor live stats.
 
----
-
-## Demo
-
-*(Add a 30-second audio/video recording of a live phone order here)*
-
-![Dashboard Screenshot](https://via.placeholder.com/1000x500.png?text=Dashboard+Screenshot+Here)
-
----
 
 ## Architecture
 
