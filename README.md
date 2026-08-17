@@ -1,8 +1,6 @@
-# 🍽️ Vasantha Vilas — AI Voice Ordering Assistant
+# 🍽️ Restaurants — AI Voice Ordering Assistant
 
-> Real-time AI phone ordering for restaurants — Twilio + OpenAI Realtime API voice agent with function calling, Postgres, and a React admin dashboard.
-
-Customers call a Twilio phone number and speak naturally with **Aria**, a warm British-accented voice assistant powered by the **OpenAI Realtime API** (`gpt-4o-mini-realtime-preview`). Orders are saved to **PostgreSQL**, the kitchen is notified via **WhatsApp**, and the customer receives an **SMS receipt** — all in real time.
+AI-powered phone ordering system for a **Restaurant**. Customers call a Twilio phone number and speak naturally with **Aria**, a warm British-accented voice assistant powered by the **OpenAI Realtime API** (`gpt-4o-mini-realtime-preview`). Orders are saved to **PostgreSQL**, the kitchen is notified via **WhatsApp**, and the customer receives an **SMS receipt** — all in real time.
 
 A full **React admin dashboard** lets staff manage the menu, view orders, review call transcripts, and monitor live stats.
 
