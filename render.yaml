@@ -13,20 +13,20 @@ services:
         sync: false
       - key: TWILIO_AUTH_TOKEN
         sync: false
-      - key: TWILIO_API_KEY
-        sync: false
       - key: TWILIO_PHONE_NUMBER
         sync: false
-      - key: GROQ_API_KEY
+      - key: OPENAI_API_KEY
         sync: false
-      - key: BASE_URL
+      - key: SECRET_KEY
         sync: false
       - key: JWT_SECRET_KEY
         sync: false
+      - key: BASE_URL
+        sync: false
       - key: TWILIO_WHATSAPP_FROM
-        value: "whatsapp:+14155238886"
+        sync: false
       - key: COOK_WHATSAPP_NUMBER
-        value: "whatsapp:+447349 035450"
+        sync: false
     healthCheckPath: /health/
 
 databases:

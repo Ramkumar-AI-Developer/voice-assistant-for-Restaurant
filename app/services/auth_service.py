@@ -104,18 +104,41 @@ async def get_admin_user(
 # ── Default admin creation ────────────────────────────────────────────────────
 
 async def create_default_admin(db: AsyncSession) -> None:
-    """Create the default admin user if no users exist."""
+    """Create the default admin user if no users exist.
+    
+    If DEFAULT_ADMIN_PASSWORD is empty (the secure default), a random
+    password is generated and printed to stdout exactly once.
+    """
     result = await db.execute(select(User).limit(1))
     if result.scalar_one_or_none() is not None:
         return  # Users already exist
 
+    import secrets
+
+    password = settings.DEFAULT_ADMIN_PASSWORD
+    generated = False
+    if not password:
+        password = secrets.token_urlsafe(16)
+        generated = True
+
     admin = User(
         username=settings.DEFAULT_ADMIN_USERNAME,
         email="admin@restaurant.com",
-        hashed_password=hash_password(settings.DEFAULT_ADMIN_PASSWORD),
+        hashed_password=hash_password(password),
         is_admin=True,
         is_active=True,
     )
     db.add(admin)
     await db.commit()
+
+    if generated:
+        # Print to stdout so the operator can copy it from the terminal
+        print(f"\n{'=' * 60}")
+        print(f"  DEFAULT ADMIN CREATED")
+        print(f"  Username : {settings.DEFAULT_ADMIN_USERNAME}")
+        print(f"  Password : {password}")
+        print(f"  ⚠️  Save this password now — it will not be shown again.")
+        print(f"{'=' * 60}\n")
+    
     logger.info(f"Default admin user created: {settings.DEFAULT_ADMIN_USERNAME}")
+
