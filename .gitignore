@@ -16,16 +16,28 @@ logs/
 *.log
 *.sqlite3
 
-# Temporary / scripts
+# Debug / scratch scripts
+tmp/
+debug_*.py
+reset_*.py
+test_bcrypt.py
+test_login.py
+test_gemini.py
 get_whatsapp_error.py
 get_order_log.py
-whatsapp_error.txt
 extract_call_log.py
-last_call_trace.txt
-last_call_trace_utf8.txt
+architecture_recommendations.md
+
+# Error logs and trace files
+load_error*.txt
+server_log.txt
+whatsapp_error.txt
+last_call_trace*.txt
+*_error.txt
 
 # Frontend (Node)
 frontend/node_modules/
 frontend/dist/
+frontend/build_out.txt
 frontend/.DS_Store
 *.swp
